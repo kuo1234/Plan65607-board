@@ -1,38 +1,79 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { toast } from 'vue3-toastify';
+import 'vue3-toastify/dist/index.css';
+import { useRouter } from 'vue-router';
 
-defineProps<{ msg: string }>()
+const router = useRouter();
 
-const count = ref(0)
+const notify = () => {
+      toast("Wow so easy !", {
+      }); // ToastOptions
+    }
+
+
+const editCommand = () => {
+  console.log('editCommnad')
+}
+
+
+
+const viewSignals = () => {
+  console.log('viewSignals')
+}
+
+
+
+const viewStudent = () => {
+  router.push('/student-page'); // 使用路由的路径来导航
+}
+
 </script>
 
+
+
+
+
+
 <template>
-  <h1>{{ msg }}</h1>
-
-  <div class="card">
-    <button type="button" @click="count++">count is {{ count }}</button>
-    <p>
-      Edit
-      <code>components/HelloWorld.vue</code> to test HMR
-    </p>
+  <div class="button-grid">
+    <div class="button-row">
+      <button @click="editCommand">技令編輯</button>
+      <button @click="notify">生理訊號</button>
+    </div>
+    <div class="button-row">
+      <button @click="viewSignals">教學統計與列印</button>
+      <button @click="viewStudent">學員畫面</button>
+    </div>
   </div>
-
-  <p>
-    Check out
-    <a href="https://vuejs.org/guide/quick-start.html#local" target="_blank"
-      >create-vue</a
-    >, the official Vue + Vite starter
-  </p>
-  <p>
-    Install
-    <a href="https://github.com/johnsoncodehk/volar" target="_blank">Volar</a>
-    in your IDE for a better DX
-  </p>
-  <p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>
 </template>
 
 <style scoped>
-.read-the-docs {
-  color: #888;
+
+.button-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-image: url('../public/image1.png'); 
+  background-size: cover; 
+  min-height: 90vh;
+  min-width: 120vh; 
 }
+
+
+.button-row {
+  display: flex;
+}
+
+button {
+  margin: 5px; 
+  width: 200px; 
+  height: 200px; 
+  background-color: rgba(0, 0, 0, 0.5);;
+  color: white;
+  border: none; 
+  font-size: 25px; 
+
+}
+
 </style>
