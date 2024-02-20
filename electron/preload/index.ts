@@ -1,7 +1,18 @@
-import { ipcRenderer, contextBridge } from 'electron'
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', withPrototype(ipcRenderer))
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    startScrcpy: () => ipcRenderer.send('start-scrcpy'),
+    on: (channel, callback) => {
+      ipcRenderer.on(channel, (event, ...args) => callback(...args));
+  },
+    onScrcpyOutput: (callback: (output: string) => void) => {
+        // 删除现有的事件监听器以防止重复
+        ipcRenderer.removeAllListeners('scrcpy-output');
+        ipcRenderer.on('scrcpy-output', (_, output) => callback(output));
+    }
+});
+
 
 // `exposeInMainWorld` can't detect attributes and methods of `prototype`, manually patching it.
 function withPrototype(obj: Record<string, any>) {
