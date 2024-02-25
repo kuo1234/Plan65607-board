@@ -2,6 +2,7 @@
     <div class="home-button-container">
       <button @click="return_home">Return Home</button>
       <button @click="startScrcpy">Start Scrcpy</button>
+      <button @click="listDevices">裝置</button>
     </div>
     <div class="video-container">
       <div class="video-stream" v-for="n in 5" :key="n">
