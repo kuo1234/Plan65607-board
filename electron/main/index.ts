@@ -2,8 +2,10 @@
 import { release } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exec } from 'child_process';
+import { spawn,exec } from 'child_process';
 import path from 'path';
+
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const scrcpyDirPath = path.join(__dirname, '../../externals');
@@ -97,59 +99,119 @@ ipcMain.handle('open-win', (_, arg) => {
 });
 
 
-// 新增的 Scrcpy 相关逻辑
-ipcMain.on('start-scrcpy', (event) => {
-  // 构造 adb 命令的完整路径
-  const adbCommandPath = path.join(scrcpyDirPath, 'adb');
 
-  
-  exec(`${adbCommandPath} shell ip route`, (error, stdout, stderr) => {
-      if (error) {
-          console.error(`获取 IP 地址时出错: ${error}`);
-          event.reply('scrcpy-error', '获取 IP 地址失败');
-          return;
-      }
+ipcMain.on('listDevices', (event) => {
+  console.log('Received listDevices event'); 
 
-      const ipMatch = stdout.match(/src (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
-      if (!ipMatch || ipMatch.length < 2) {
-        console.error('未找到有效的 IP 地址');
-        event.reply('scrcpy-error', '未找到有效的 IP 地址');
-        return;
-      }
-  
-      const deviceIP = ipMatch[1];
-
-      
-      exec(`${adbCommandPath} tcpip 5555`, (tcpError) => {
-          if (tcpError) {
-              console.error(`设置 adb tcpip 时出错: ${tcpError}`);
-              event.reply('scrcpy-error', '设置 adb tcpip 失败');
-              return;
-          }
-
-          // 第三步：连接设备
-          exec(`${adbCommandPath} connect ${deviceIP}:5555`, (connectError) => {
-              if (connectError) {
-                  console.error(`连接设备时出错: ${connectError}`);
-                  event.reply('scrcpy-error', '连接设备失败');
-                  return;
-              }
-
-              // 第四步：启动 Scrcpy
-              const scrcpyCommandPath = path.join(scrcpyDirPath, 'scrcpy');
-              exec(`${scrcpyCommandPath} -s ${deviceIP}:5555 --video-bit-rate 2M --max-fps 15 --no-audio`, (scrcpyError, scrcpyStdout) => {
-                  if (scrcpyError) {
-                      console.error(`启动 Scrcpy 时出错: ${scrcpyError}`);
-                      event.reply('scrcpy-error', '启动 Scrcpy 失败');
-                      return;
-                  }
-                  console.log('Scrcpy 已成功启动');
-                  event.reply('scrcpy-success', 'Scrcpy 已成功启动');
-              });
-          });
-      });
+  const adbPath = path.join(__dirname, '../../externals/adb.exe'); 
+  exec(`${adbPath} devices`, (error, stdout, stderr) => {
+    console.log('adb devices output:', stdout);
+    if (error) {
+      console.error(`take devices wrong: ${error.message}`);
+      event.reply('device-list-error', 'device-list-error');
+      return;
+    }
+    event.reply('device-list', stdout);
   });
 });
+
+
+
+ipcMain.on('get-device-ip', (event, deviceName) => {
+  const adbCommandPath = path.join(__dirname, '../../externals/adb');
+  const command = `${adbCommandPath} -s ${deviceName} shell ip route`;
+  
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`獲取設備${deviceName}的IP地址時出錯: ${error}`);
+      event.reply('device-ip-error', `獲取${deviceName}的IP地址失敗`);
+      return;
+    }
+
+    const channel = `device-ip-${deviceName}`;
+    const ipMatch = stdout.match(/src (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    if (ipMatch && ipMatch.length > 1) {
+      const deviceIP = ipMatch[1];
+      event.reply(channel, deviceIP); // 使用唯一通道名回復IP
+    } else {
+      event.reply(`${channel}-error`, '無法獲取IP地址'); // 使用唯一通道名回復錯誤
+    }
+  });
+});
+
+ipcMain.on('setTcpip', (event, deviceName) => {
+  const adbCommandPath = path.join(__dirname, '../../externals/adb.exe'); // ADB 命令的路徑
+  exec(`${adbCommandPath} -s ${deviceName} tcpip 5555`, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`設定 TCP/IP 端口出錯: ${error.message}`);
+      event.reply('setTcpip-response', { success: false, message: '設定 TCP/IP 端口失敗' });
+    } else {
+      console.log('成功設定 TCP/IP 端口: 5555');
+      event.reply('setTcpip-response', { success: true, message: '成功設定 TCP PORT: 5555' });
+    }
+  });
+});
+
+
+
+
+
+ipcMain.on('adb-connect', (event, deviceAddress) => {
+  const adbCommandPath = path.join(__dirname, '../../externals/adb.exe');
+  const command = `${adbCommandPath} connect ${deviceAddress}`;
+  console.log({deviceAddress});
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`執行 adb connect 時出錯: ${error}`);
+      event.reply('adb-connect-response', '連接失敗');
+      return;
+    }
+    console.log('connectsuccess');
+    exec(`${adbCommandPath} devices`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`獲取設備列表時出錯: ${error.message}`);
+        return;
+      }
+      event.reply('device-list', stdout);
+    });
+  
+  });
+});
+
+
+ipcMain.on('start-scrcpy', (event, deviceIP) => {
+  const scrcpyPath = path.join(__dirname, '../../externals/scrcpy.exe');
+
+  // 使用 spawn 而不是 exec 啟動新的進程
+  const scrcpyProcess = spawn(scrcpyPath, [
+    '-s', deviceIP,
+    '--video-bit-rate', '2M',
+    '--max-fps', '15',
+    '--no-audio',
+    '--crop', '1960:2100:100:100'
+  ], { shell: true }); // 在 Windows 上運行時，可能需要設置 shell: true
+
+  // 監聽 stdout 和 stderr
+  scrcpyProcess.stdout.on('data', (data) => {
+    console.log(`stdout: ${data}`);
+  });
+
+  scrcpyProcess.stderr.on('data', (data) => {
+    console.error(`stderr: ${data}`);
+  });
+
+  scrcpyProcess.on('close', (code) => {
+    console.log(`scrcpy 子進程退出碼：${code}`);
+    // 根據退出碼決定是否成功，並通知渲染進程
+    if (code !== 0) {
+      event.reply('scrcpy-response', '影像投射失敗');
+    }
+  });
+
+  // 無需移除監聽器，因為每個 scrcpyProcess 是獨立的
+});
+
+
 
 app.whenReady().then(createWindow);
 

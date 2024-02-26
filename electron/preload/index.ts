@@ -2,16 +2,35 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    startScrcpy: () => ipcRenderer.send('start-scrcpy'),
-    on: (channel, callback) => {
-      ipcRenderer.on(channel, (event, ...args) => callback(...args));
+  send: (channel, data) => {
+    ipcRenderer.send(channel, data);
   },
-    onScrcpyOutput: (callback: (output: string) => void) => {
-        // 删除现有的事件监听器以防止重复
-        ipcRenderer.removeAllListeners('scrcpy-output');
-        ipcRenderer.on('scrcpy-output', (_, output) => callback(output));
-    }
+  receive: (channel, func) => {
+    ipcRenderer.on(channel, (event, ...args) => func(...args));
+  },
+  
+  listDevices: () => ipcRenderer.send('listDevices'),
+  on: (channel, callback) => {
+    ipcRenderer.on(channel, (_, ...args) => callback(...args));
+  },
+  removeListener: (channel, callback) => {
+    ipcRenderer.removeListener(channel, callback);
+  },
+  getDeviceIP: (deviceName) => ipcRenderer.send('get-device-ip', deviceName),
+  onDeviceIP: (deviceName, callback) => {
+    const channel = `device-ip-${deviceName}`; // 為每個設備創建唯一的通道名
+    ipcRenderer.removeAllListeners(channel); // 移除之前的所有監聽器
+    ipcRenderer.once(channel, (_, ip) => callback(ip, null)); // 使用once確保監聽器只被調用一次
+    ipcRenderer.removeAllListeners(`${channel}-error`); // 移除之前的所有錯誤監聽器
+    ipcRenderer.once(`${channel}-error`, (_, error) => callback(null, error)); // 處理錯誤
+  },
+  setTcpip: (deviceName) => ipcRenderer.send('setTcpip', deviceName),
+  onSetTcpipResponse: (callback) => ipcRenderer.on('setTcpip-response', (event, response) => callback(response))
+
+  
+
 });
+
 
 
 // `exposeInMainWorld` can't detect attributes and methods of `prototype`, manually patching it.
