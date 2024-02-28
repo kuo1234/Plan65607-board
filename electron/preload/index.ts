@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  
   send: (channel, data) => {
     ipcRenderer.send(channel, data);
   },
@@ -25,10 +26,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.once(`${channel}-error`, (_, error) => callback(null, error)); // 處理錯誤
   },
   setTcpip: (deviceName) => ipcRenderer.send('setTcpip', deviceName),
-  onSetTcpipResponse: (callback) => ipcRenderer.on('setTcpip-response', (event, response) => callback(response))
+  onSetTcpipResponse: (callback) => ipcRenderer.on('setTcpip-response', (event, response) => callback(response)),
+  disconnectAllWifiDevices : () => ipcRenderer.send('disconnect-all-wifi-devices'),
+  onDisconnectAllWifiDevicesResponse: (callback) => ipcRenderer.on('disconnect-all-wifi-devices-response', (_, message) => callback(message)),
 
   
-
 });
 
 

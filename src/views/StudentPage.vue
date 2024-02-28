@@ -2,6 +2,7 @@
   <div class="home-button-container">
     <button @click="returnHome">返回主畫面</button>
     <button @click="listDevices">設備列表</button>
+    <button @click="disconnectAllWifiDevices">斷開所有WIFI設備</button>
   </div>
 
   <div v-if="devices.length > 0" class="device-list">
@@ -74,6 +75,11 @@ const startScrcpy = (deviceIP) => {
   window.electronAPI.send('start-scrcpy', deviceIP);
 };
 
+const disconnectAllWifiDevices = () => {
+  window.electronAPI.disconnectAllWifiDevices();
+};
+
+
 window.electronAPI.receive('scrcpy-response', (message) => {
   alert(message); // 或將信息顯示在界面上
 });
@@ -93,6 +99,8 @@ window.electronAPI.on('device-list', (deviceList) => {
 window.electronAPI.receive('adb-connect-response', (message) => {
   alert(message); // 或將信息顯示在界面上
 });
+
+
 
 const router = useRouter();
 const returnHome = () => {

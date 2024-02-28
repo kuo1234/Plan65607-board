@@ -212,6 +212,28 @@ ipcMain.on('start-scrcpy', (event, deviceIP) => {
 });
 
 
+ipcMain.on('disconnect-all-wifi-devices', (event) => {
+  const adbPath = path.join(__dirname, '../../externals/adb.exe');
+  exec(`${adbPath} disconnect`, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`斷開WIFI設備時出錯: ${error}`);
+      event.reply('disconnect-all-wifi-devices-response', '斷開失敗');
+      return;
+    }
+    console.log('所有WIFI設備已斷開');
+    event.reply('disconnect-all-wifi-devices-response', '所有WIFI設備已斷開');
+    exec(`${adbPath} devices`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`獲取設備列表時出錯: ${error.message}`);
+        return;
+      }
+      event.reply('device-list', stdout);
+    });
+
+  
+  });
+});
+
 
 app.whenReady().then(createWindow);
 
