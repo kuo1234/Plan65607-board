@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowJs": true,
     "types": [
       "vue3-toastify/global"
     ],
@@ -16,8 +17,10 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "router"],
+  "include": ["src", "router","global.d.ts"],
   "references": [
     { "path": "./tsconfig.node.json" }
   ]
+
+
 }
