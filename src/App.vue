@@ -1,20 +1,15 @@
 <template>
- 
-  
-  <router-view></router-view>
   <div class="flex-center">
+  <router-view></router-view>
 </div>
 
 </template>
-
-
 
 <script setup lang="ts">
 import HelloWorld from './components/HelloWorld.vue'
 </script>
 
 <style>
-
 body {
   background-color: #121212; /* 深色背景 */
   color: #e0e0e0; /* 淺色文字 */

@@ -54,7 +54,7 @@ const viewStudent = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-image: url('../public/image1.png'); 
+  background-image: url("../assets/image1.png"); 
   background-size: cover; 
   min-height: 90vh;
   min-width: 120vh; 
