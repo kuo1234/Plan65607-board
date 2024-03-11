@@ -188,7 +188,7 @@ ipcMain.on('start-scrcpy', (event, deviceIP) => {
     '--video-bit-rate', '2M',
     '--max-fps', '15',
     '--no-audio',
-    '--crop', '1960:2100:100:100'
+    '--crop', '1600:1039:2200:549'
   ], { shell: true }); // 在 Windows 上運行時，可能需要設置 shell: true
 
   // 監聽 stdout 和 stderr
