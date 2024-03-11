@@ -8,7 +8,7 @@ import path from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const scrcpyDirPath = path.join(__dirname, '../../externals');
+const scrcpyDirPath = path.join(__dirname, '../../src/externals');
 
 process.env.DIST_ELECTRON = join(__dirname, '..');
 process.env.DIST = join(process.env.DIST_ELECTRON, '../dist');
@@ -40,7 +40,7 @@ async function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) { // electron-vite-vue#298
     win.loadURL(url)
       // Open devTool if the app is not packaged
-    win.webContents.openDevTools()
+    
   } else {
     win.loadFile(indexHtml)
   }
@@ -103,7 +103,7 @@ ipcMain.handle('open-win', (_, arg) => {
 ipcMain.on('listDevices', (event) => {
   console.log('Received listDevices event'); 
 
-  const adbPath = path.join(__dirname, '../../externals/adb.exe'); 
+  const adbPath = path.join(__dirname, '../../src/externals/adb.exe'); 
   exec(`${adbPath} devices`, (error, stdout, stderr) => {
     console.log('adb devices output:', stdout);
     if (error) {
@@ -118,7 +118,7 @@ ipcMain.on('listDevices', (event) => {
 
 
 ipcMain.on('get-device-ip', (event, deviceName) => {
-  const adbCommandPath = path.join(__dirname, '../../externals/adb');
+  const adbCommandPath = path.join(__dirname, '../../src/externals/adb');
   const command = `${adbCommandPath} -s ${deviceName} shell ip route`;
   
   exec(command, (error, stdout, stderr) => {
@@ -140,7 +140,7 @@ ipcMain.on('get-device-ip', (event, deviceName) => {
 });
 
 ipcMain.on('setTcpip', (event, deviceName) => {
-  const adbCommandPath = path.join(__dirname, '../../externals/adb.exe'); // ADB 命令的路徑
+  const adbCommandPath = path.join(__dirname, '../../src/externals/adb.exe'); // ADB 命令的路徑
   exec(`${adbCommandPath} -s ${deviceName} tcpip 5555`, (error, stdout, stderr) => {
     if (error) {
       console.error(`設定 TCP/IP 端口出錯: ${error.message}`);
@@ -157,7 +157,7 @@ ipcMain.on('setTcpip', (event, deviceName) => {
 
 
 ipcMain.on('adb-connect', (event, deviceAddress) => {
-  const adbCommandPath = path.join(__dirname, '../../externals/adb.exe');
+  const adbCommandPath = path.join(__dirname, '../../src/externals/adb.exe');
   const command = `${adbCommandPath} connect ${deviceAddress}`;
   console.log({deviceAddress});
   exec(command, (error, stdout, stderr) => {
@@ -180,7 +180,7 @@ ipcMain.on('adb-connect', (event, deviceAddress) => {
 
 
 ipcMain.on('start-scrcpy', (event, deviceIP) => {
-  const scrcpyPath = path.join(__dirname, '../../externals/scrcpy.exe');
+  const scrcpyPath = path.join(__dirname, '../../src/externals/scrcpy.exe');
 
   // 使用 spawn 而不是 exec 啟動新的進程
   const scrcpyProcess = spawn(scrcpyPath, [
@@ -213,7 +213,7 @@ ipcMain.on('start-scrcpy', (event, deviceIP) => {
 
 
 ipcMain.on('disconnect-all-wifi-devices', (event) => {
-  const adbPath = path.join(__dirname, '../../externals/adb.exe');
+  const adbPath = path.join(__dirname, '../../src/externals/adb.exe');
   exec(`${adbPath} disconnect`, (error, stdout, stderr) => {
     if (error) {
       console.error(`斷開WIFI設備時出錯: ${error}`);

@@ -9,9 +9,11 @@
     <div v-for="device in devices" :key="device" class="device-item">
       {{ device }}
       <div class="buttons-container">
-        <button @click="getDeviceIP(device)">獲取設備IP</button>
+        <!-- <button @click="getDeviceIP(device)">獲取設備IP</button>
         <button @click="setTCPIP(device)">設定TCP端口</button>
-        <button @click="connectDevice(device)">設備連接</button>
+        <button @click="connectDevice(device)">設備連接</button> -->
+        <button @click="wifiConnect(device)">WiFi連接</button>
+
         <button @click="startScrcpy(device)">影像投射</button>
       </div>
       <div v-if="deviceIPs[device]">{{ deviceIPs[device] }}</div>
@@ -35,28 +37,35 @@ const listDevices = () => {
 };
 
 const getDeviceIP = (deviceName) => {
-  window.electronAPI.onDeviceIP(deviceName, (ip, error) => {
-    if (error) {
-      console.error(error);
-      deviceIPs.value[deviceName] = '獲取IP失敗, 請連接wifi';
-    } else {
-      deviceIPs.value[deviceName] = `${ip}:5555`;
-    }
+  return new Promise((resolve, reject) => {
+    window.electronAPI.onDeviceIP(deviceName, (ip, error) => {
+      if (error) {
+        console.error(error);
+        deviceIPs.value[deviceName] = '獲取IP失敗, 請連接wifi';
+        reject(error);
+      } else {
+        deviceIPs.value[deviceName] = `${ip}:5555`;
+        resolve(ip);
+      }
+    });
+    window.electronAPI.getDeviceIP(deviceName);
   });
-  // 發送請求獲取IP
-  window.electronAPI.getDeviceIP(deviceName);
 };
 
 
 
 const setTCPIP = (deviceName) => {
-  window.electronAPI.setTcpip(deviceName);
-  window.electronAPI.onSetTcpipResponse((response) => {
-    if (response.success) {
-      alert(response.message); // 顯示成功訊息
-    } else {
-      console.error(response.message); // 處理錯誤情況
-    }
+  return new Promise((resolve, reject) => {  
+    window.electronAPI.setTcpip(deviceName);
+    window.electronAPI.onSetTcpipResponse((response) => {
+      if (response.success) {
+        alert(response.message);
+        resolve(response);
+      } else {
+        console.error(response.message);
+        reject(response.message);
+      }
+    });
   });
 };
 
@@ -67,6 +76,12 @@ const connectDevice = (deviceName) => {
   } else {
     alert('設備IP未知，請先獲取設備IP');
   }
+};
+
+const wifiConnect = async (deviceName) => {
+  await getDeviceIP(deviceName);
+  await setTCPIP(deviceName);
+  connectDevice(deviceName); // 这里不需要await，因为`connectDevice`方法内部没有返回Promise
 };
 
 const startScrcpy = (deviceIP) => {
