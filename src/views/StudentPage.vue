@@ -22,13 +22,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { toast } from "vue3-toastify";
+import "vue3-toastify/dist/index.css";
 
 const devices = ref([]);
-const deviceIPs = ref({}); 
-
+const deviceIPs = ref({});
 
 const deviceIPListeners = new Map(); // 創建一個新的 Map 來存儲監聽器
 // 使用 window.electronAPI.listDevices 请求设备列表
@@ -41,7 +41,7 @@ const getDeviceIP = (deviceName) => {
     window.electronAPI.onDeviceIP(deviceName, (ip, error) => {
       if (error) {
         console.error(error);
-        deviceIPs.value[deviceName] = '獲取IP失敗, 請連接wifi';
+        deviceIPs.value[deviceName] = "獲取IP失敗, 請連接wifi";
         reject(error);
       } else {
         deviceIPs.value[deviceName] = `${ip}:5555`;
@@ -52,14 +52,12 @@ const getDeviceIP = (deviceName) => {
   });
 };
 
-
-
 const setTCPIP = (deviceName) => {
-  return new Promise((resolve, reject) => {  
+  return new Promise((resolve, reject) => {
     window.electronAPI.setTcpip(deviceName);
     window.electronAPI.onSetTcpipResponse((response) => {
       if (response.success) {
-        alert(response.message);
+        // alert(response.message);
         resolve(response);
       } else {
         console.error(response.message);
@@ -72,54 +70,71 @@ const setTCPIP = (deviceName) => {
 const connectDevice = (deviceName) => {
   const deviceAddress = deviceIPs.value[deviceName]; // 使用保存的IP地址和端口
   if (deviceAddress) {
-    window.electronAPI.send('adb-connect', deviceAddress);
+    window.electronAPI.send("adb-connect", deviceAddress);
   } else {
-    alert('設備IP未知，請先獲取設備IP');
+    alert("設備IP未知，請先獲取設備IP");
   }
 };
 
 const wifiConnect = async (deviceName) => {
-  await getDeviceIP(deviceName);
-  await setTCPIP(deviceName);
-  connectDevice(deviceName); // 这里不需要await，因为`connectDevice`方法内部没有返回Promise
+  try {
+    await getDeviceIP(deviceName);
+    await setTCPIP(deviceName);
+    await connectDevice(deviceName);
+    toast("成功連接TCPIP", {
+      position: "top-center",
+      autoClose: 2000,
+    });
+  } catch (error) {
+    toast("連接失敗: " + error.message, {
+      position: "top-center",
+      type: "error",
+      autoClose: 5000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+      progress: undefined,
+    });
+  }
 };
 
 const startScrcpy = (deviceIP) => {
   // 確保 deviceIP 和 devicePort 是有效的值
   console.log(`設備 IP: ${deviceIP}`);
-  window.electronAPI.send('start-scrcpy', deviceIP);
+  window.electronAPI.send("start-scrcpy", deviceIP);
 };
 
 const disconnectAllWifiDevices = () => {
   window.electronAPI.disconnectAllWifiDevices();
 };
 
-
-window.electronAPI.receive('scrcpy-response', (message) => {
+window.electronAPI.receive("scrcpy-response", (message) => {
   alert(message); // 或將信息顯示在界面上
 });
-window.electronAPI.receive('adb-connect-response', (message) => {
+window.electronAPI.receive("adb-connect-response", (message) => {
   alert(message);
 });
 
-
 // 监听设备列表更新
-window.electronAPI.on('device-list', (deviceList) => {
+window.electronAPI.on("device-list", (deviceList) => {
   // 处理设备列表字符串，将其分割成数组
-  devices.value = deviceList.split('\n')
-    .filter(line => line.includes('device') && !line.includes('List of devices attached'))
-    .map(line => line.trim().split(/\s+/)[0]);
+  devices.value = deviceList
+    .split("\n")
+    .filter(
+      (line) =>
+        line.includes("device") && !line.includes("List of devices attached")
+    )
+    .map((line) => line.trim().split(/\s+/)[0]);
 });
 
-window.electronAPI.receive('adb-connect-response', (message) => {
+window.electronAPI.receive("adb-connect-response", (message) => {
   alert(message); // 或將信息顯示在界面上
 });
 
-
-
 const router = useRouter();
 const returnHome = () => {
-  router.push('/');
+  router.push("/");
 };
 </script>
 
@@ -137,7 +152,7 @@ const returnHome = () => {
 }
 
 .home-button-container button {
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
   padding: 10px 20px;
   border: none;
@@ -164,14 +179,14 @@ const returnHome = () => {
   align-items: center;
   gap: 10px;
   padding: 20px;
-  border: 2px solid #4CAF50;
+  border: 2px solid #4caf50;
   border-radius: 10px;
 }
 
 .device-name {
   font-size: 18px;
   font-weight: bold;
-  color: #4CAF50;
+  color: #4caf50;
 }
 
 .buttons-container {
@@ -180,7 +195,7 @@ const returnHome = () => {
 }
 
 .buttons-container button {
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
   padding: 5px 15px;
   border: none;
