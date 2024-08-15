@@ -30,7 +30,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disconnectAllWifiDevices : () => ipcRenderer.send('disconnect-all-wifi-devices'),
   onDisconnectAllWifiDevicesResponse: (callback) => ipcRenderer.on('disconnect-all-wifi-devices-response', (_, message) => callback(message)),
 
-  
+  onLogMessage: (callback) => ipcRenderer.on('log-message', (event, message) => callback(message)),
+  onLogError: (callback) => ipcRenderer.on('log-error', (event, error) => callback(error)),
 });
 
 

@@ -33,8 +33,48 @@ const deviceIPs = ref({});
 const deviceIPListeners = new Map(); // 創建一個新的 Map 來存儲監聽器
 // 使用 window.electronAPI.listDevices 请求设备列表
 const listDevices = () => {
+  console.log("Requesting device list...");
+
+  // 发送请求到主进程获取设备列表
   window.electronAPI.listDevices();
+
+  // 监听设备列表返回
+  window.electronAPI.on("device-list", (deviceList) => {
+    if (!deviceList || deviceList.trim() === "List of devices attached") {
+      // 设备列表为空，仅在控制台打印错误信息
+      console.error("No devices connected");
+    } else {
+      console.log("Received device list from main process:", deviceList);
+
+      // 处理设备列表字符串，将其分割成数组并更新设备列表
+      devices.value = deviceList
+        .split("\n")
+        .filter(
+          (line) =>
+            line.includes("device") && !line.includes("List of devices attached")
+        )
+        .map((line) => line.trim().split(/\s+/)[0]);
+
+      if (devices.value.length === 0) {
+        console.error("No devices connected");
+      } else {
+        console.log("Parsed devices:", devices.value);
+      }
+    }
+  });
+
+  // 监听错误信息返回
+  window.electronAPI.receive("device-list-error", (errorMessage) => {
+    console.error("Error from main process:", errorMessage);
+
+    if (errorMessage.includes("adb.exe not found")) {
+      console.error("adb.exe not found at the expected path: " + adbPath);
+    } else {
+      console.error("Error while listing devices: " + errorMessage);
+    }
+  });
 };
+
 
 const getDeviceIP = (deviceName) => {
   return new Promise((resolve, reject) => {
@@ -110,7 +150,7 @@ const disconnectAllWifiDevices = () => {
 };
 
 window.electronAPI.receive("scrcpy-response", (message) => {
-  alert(message); // 或將信息顯示在界面上
+  console.error(message); // 或將信息顯示在界面上
 });
 window.electronAPI.receive("adb-connect-response", (message) => {
   alert(message);
