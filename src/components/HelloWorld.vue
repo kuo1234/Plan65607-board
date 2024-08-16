@@ -15,7 +15,9 @@ const editCommand = () => {
   console.log('editCommnad')
 }
 
-
+const viewBiosignals = () => {
+  router.push('/biosignal-page');
+}
 
 const viewSignals = () => {
   console.log('viewSignals')
@@ -38,7 +40,7 @@ const viewStudent = () => {
   <div class="button-grid">
     <div class="button-row">
       <button @click="editCommand">技令編輯</button>
-      <button @click="notify">生理訊號</button>
+      <button @click="viewBiosignals">生理訊號</button>
     </div>
     <div class="button-row">
       <button @click="viewSignals">教學統計與列印</button>
