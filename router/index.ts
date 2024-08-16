@@ -1,6 +1,7 @@
 ﻿import { createRouter, createWebHashHistory } from 'vue-router';
 import HelloWorld from '../src/components/HelloWorld.vue';
 import StudentPage from '../src/views/StudentPage.vue';
+import BiosignalPage from '../src/views/BiosignalPage.vue';
 
 const routes = [
   {
@@ -12,6 +13,11 @@ const routes = [
     path: '/student-page',
     name: 'StudentPage',
     component: StudentPage,
+  },
+  {
+    path: '/biosignal-page',
+    name: 'BiosignalPage',
+    component: BiosignalPage,
   },
 ];
 

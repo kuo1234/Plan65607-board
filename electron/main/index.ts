@@ -1,4 +1,5 @@
 ﻿import { app, BrowserWindow, shell, ipcMain } from "electron";
+import WebSocket, { WebSocketServer } from 'ws';
 import { release } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,12 @@ let win: BrowserWindow | null = null;
 const preload = join(__dirname, "../preload/index.mjs");
 const url = process.env.VITE_DEV_SERVER_URL;
 const indexHtml = join(process.env.DIST, "index.html");
+const devices: Map<string, DeviceConnection> = new Map();
+
+interface DeviceConnection {
+  ipAddress: string;
+  data: any[];
+}
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -55,7 +62,46 @@ async function createWindow() {
     return { action: "deny" };
   });
   // win.webContents.on('will-navigate', (event, url) => { }) #344
+
+  try {
+    const wss = new WebSocketServer({ port: 8080 });
+    // WebSocket 服务器的其它代码
+    const clients: WebSocket[] = [];
+    const deviceData: { [key: string]: any[] } = {};
+    wss.on('connection', (ws, req) => {
+      const ip = req.socket.remoteAddress;
+      console.log(`New connection from ${ip}`);
+      clients.push(ws);
+
+      ws.on('message', (message) => {
+          const data = JSON.parse(message.toString());
+          console.log('Received data:', data);
+          if (!deviceData[ip]) {
+              deviceData[ip] = [];
+          }
+          deviceData[ip].push(data);
+          if (deviceData[ip].length > 30) {
+              deviceData[ip].shift();
+          }
+
+          // 通知前端更新数据
+          win.webContents.send('update-data', { ip, data: deviceData[ip] });
+      });
+
+      ws.on('close', () => {
+          console.log(`Connection closed: ${ip}`);
+          clients.splice(clients.indexOf(ws), 1);
+          delete deviceData[ip];
+      });
+    });
+
+    ipcMain.handle('get-device-data', () => deviceData);
+  } catch (error) {
+    console.error('Failed to create WebSocket server:', error);
+  }
 }
+
+
 
 app.on("window-all-closed", () => {
   win = null;
