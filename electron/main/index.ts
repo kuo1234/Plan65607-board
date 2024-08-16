@@ -10,6 +10,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const scrcpyDirPath = path.join(__dirname, "../../src/externals");
 
+
+import isDev from 'electron-is-dev';
+
+const externalsPath = isDev 
+  ? path.join(__dirname, "../../src/externals/") 
+  : path.join(process.resourcesPath, "externals");
+
+const adbPath = path.join(externalsPath, "adb.exe");
+const scrcpyPath = path.join(externalsPath, "scrcpy.exe");
+import fs from 'fs';
+if (!fs.existsSync(adbPath)) {
+  console.error("adb.exe not found at path:", adbPath);
+}
+
 process.env.DIST_ELECTRON = join(__dirname, "..");
 process.env.DIST = join(process.env.DIST_ELECTRON, "../dist");
 process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
@@ -29,6 +43,7 @@ interface DeviceConnection {
   ipAddress: string;
   data: any[];
 }
+
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -141,25 +156,40 @@ ipcMain.handle("open-win", (_, arg) => {
     childWindow.loadFile(indexHtml, { hash: arg });
   }
 });
+function logToRenderer(message) {
+  if (win) {
+    win.webContents.send('log-message', message);
+  }
+}
 
 ipcMain.on("listDevices", (event) => {
   console.log("Received listDevices event");
+  logToRenderer("Received listDevices event");
 
-  const adbPath = path.join(__dirname, "../../src/externals/adb.exe");
+  // 检查 adb.exe 是否存在
+  if (!fs.existsSync(adbPath)) {
+    const errorMessage = `adb.exe not found at path: ${adbPath}`;
+    logToRenderer(errorMessage);
+    console.error(errorMessage);
+    event.reply("device-list-error", errorMessage);
+    return;
+  }
+
   exec(`${adbPath} devices`, (error, stdout, stderr) => {
     console.log("adb devices output:", stdout);
     if (error) {
-      console.error(`take devices wrong: ${error.message}`);
-      event.reply("device-list-error", "device-list-error");
+      const execError = `Error executing adb devices: ${error.message}`;
+      logToRenderer(execError);
+      logToRenderer(`stderr: ${stderr}`);
+      console.error(execError);
+      event.reply("device-list-error", execError);
       return;
     }
     event.reply("device-list", stdout);
   });
 });
-
 ipcMain.on("get-device-ip", (event, deviceName) => {
-  const adbCommandPath = path.join(__dirname, "../../src/externals/adb");
-  const command = `${adbCommandPath} -s ${deviceName} shell ip route`;
+  const command = `${adbPath} -s ${deviceName} shell ip route`;
 
   exec(command, (error, stdout, stderr) => {
     if (error) {
@@ -180,9 +210,9 @@ ipcMain.on("get-device-ip", (event, deviceName) => {
 });
 
 ipcMain.on("setTcpip", (event, deviceName) => {
-  const adbCommandPath = path.join(__dirname, "../../src/externals/adb.exe"); // ADB 命令的路徑
+
   exec(
-    `${adbCommandPath} -s ${deviceName} tcpip 5555`,
+    `${adbPath} -s ${deviceName} tcpip 5555`,
     (error, stdout, stderr) => {
       if (error) {
         console.error(`設定 TCP/IP 端口出錯: ${error.message}`);
@@ -202,8 +232,7 @@ ipcMain.on("setTcpip", (event, deviceName) => {
 });
 
 ipcMain.on("adb-connect", (event, deviceAddress) => {
-  const adbCommandPath = path.join(__dirname, "../../src/externals/adb.exe");
-  const command = `${adbCommandPath} connect ${deviceAddress}`;
+  const command = `${adbPath} connect ${deviceAddress}`;
   console.log({ deviceAddress });
   exec(command, (error, stdout, stderr) => {
     if (error) {
@@ -212,7 +241,7 @@ ipcMain.on("adb-connect", (event, deviceAddress) => {
       return;
     }
     console.log("connectsuccess");
-    exec(`${adbCommandPath} devices`, (error, stdout, stderr) => {
+    exec(`${adbPath} devices`, (error, stdout, stderr) => {
       if (error) {
         console.error(`獲取設備列表時出錯: ${error.message}`);
         return;
@@ -223,7 +252,6 @@ ipcMain.on("adb-connect", (event, deviceAddress) => {
 });
 
 ipcMain.on("start-scrcpy", (event, deviceIP) => {
-  const scrcpyPath = path.join(__dirname, "../../src/externals/scrcpy.exe");
 
   // 使用 spawn 而不是 exec 啟動新的進程
   const scrcpyProcess = spawn(
@@ -271,7 +299,6 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
 });
 
 ipcMain.on("disconnect-all-wifi-devices", (event) => {
-  const adbPath = path.join(__dirname, "../../src/externals/adb.exe");
   exec(`${adbPath} disconnect`, (error, stdout, stderr) => {
     if (error) {
       console.error(`斷開WIFI設備時出錯: ${error}`);
