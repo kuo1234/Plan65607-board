@@ -1,4 +1,4 @@
-<template>
+<!-- <template>
     <canvas ref="canvas"></canvas>
   </template>
   
@@ -41,4 +41,4 @@
       return { canvas };
     }
   });
-  </script>
+  </script> -->

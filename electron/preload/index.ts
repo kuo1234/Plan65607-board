@@ -30,17 +30,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disconnectAllWifiDevices : () => ipcRenderer.send('disconnect-all-wifi-devices'),
   onDisconnectAllWifiDevicesResponse: (callback) => ipcRenderer.on('disconnect-all-wifi-devices-response', (_, message) => callback(message)),
 
-<<<<<<< HEAD
   onSensorDataUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('update-data', (event, data) => callback(data));
   },
   getDeviceData: async () => {
     return ipcRenderer.invoke('get-device-data');
-  }
-=======
+  },
   onLogMessage: (callback) => ipcRenderer.on('log-message', (event, message) => callback(message)),
   onLogError: (callback) => ipcRenderer.on('log-error', (event, error) => callback(error)),
->>>>>>> origin/main
 });
 
 
