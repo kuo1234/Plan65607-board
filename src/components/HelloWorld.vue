@@ -3,6 +3,20 @@ import { toast } from 'vue3-toastify';
 import 'vue3-toastify/dist/index.css';
 import { useRouter } from 'vue-router';
 
+import { exec } from 'child_process';
+import { ipcRenderer } from 'electron';
+
+interface ElectronAPI {
+  editCommand: () => Promise<string>;
+  on: (channel: string, func: (...args: any[]) => void) => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
+
 const router = useRouter();
 
 const notify = () => {
@@ -10,10 +24,22 @@ const notify = () => {
       }); // ToastOptions
     }
 
-
-const editCommand = () => {
-  console.log('editCommnad')
+    const editCommand = async () => {
+  try {
+    const message = await window.electronAPI.editCommand();
+    toast(message, { type: 'success' });
+  } catch (error) {
+    let errorMessage = 'An unknown error occurred';
+    if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    toast(errorMessage, { type: 'error' });
+  }
 }
+
+
 
 const viewBiosignals = () => {
   router.push('/biosignal-page');
@@ -26,7 +52,7 @@ const viewSignals = () => {
 
 
 const viewStudent = () => {
-  router.push('/student-page'); // 使用路由的路径来导航
+  router.push('/student-page'); 
 }
 
 </script>

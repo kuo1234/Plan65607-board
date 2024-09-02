@@ -13,6 +13,19 @@ const scrcpyDirPath = path.join(__dirname, "../../src/externals");
 
 import isDev from 'electron-is-dev';
 
+ipcMain.handle('edit-command', () => {
+  return new Promise((resolve, reject) => {
+    exec('"..\\Technical Order Editor\\Technical Order Editor.exe"', (err) => {
+      if (err) {
+        console.error(`Error executing file: ${err}`);
+        reject('找不到教官台位置.');
+      } else {
+        resolve('教官台開啟成功');
+      }
+    });
+  });
+});
+
 const externalsPath = isDev 
   ? path.join(__dirname, "../../src/externals/") 
   : path.join(process.resourcesPath, "externals");

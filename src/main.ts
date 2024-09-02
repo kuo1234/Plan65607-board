@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from '../router'
+import { exec } from 'child_process';
 
 import './style.css'
 

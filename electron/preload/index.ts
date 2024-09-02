@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  
+editCommand: () => ipcRenderer.invoke('edit-command'),
   send: (channel, data) => {
     ipcRenderer.send(channel, data);
   },
