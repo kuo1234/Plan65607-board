@@ -1,6 +1,8 @@
 <template>
-    <div class="button-container">
+    
+    <div class="home-button-container">
         <!-- Put more button in this area -->
+        <button @click="returnHome">返回主畫面</button>
     </div>
     <div v-for="(records, ip) in data" :key="ip">
         <h3>{{ ip }}</h3>
@@ -14,6 +16,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useRouter } from "vue-router";
 
 const data = ref({});
 
@@ -27,5 +30,24 @@ const loadData = async () => {
     data.value = await window.electronAPI.getDeviceData();
 };
 
+const router = useRouter();
+const returnHome = () => {
+  router.push("/");
+};
+
 loadData();
 </script>
+
+<style scoped>
+.home-button-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  gap: 10px;
+  display: flex;
+  justify-content: start;
+  gap: 10px;
+  margin: 20px;
+}
+</style>
