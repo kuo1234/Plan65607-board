@@ -2,7 +2,7 @@
   <div class="home-button-container">
     <button @click="returnHome">返回主畫面</button>
     <button @click="listDevices">設備列表</button>
-    <button @click="disconnectAllWifiDevices">斷開所有無線設備</button>
+    <button @click="disconnectAllWifiDevices">斷開META眼鏡</button>
   </div>
 
   <div v-if="devices.length > 0" class="device-list">
@@ -12,7 +12,7 @@
         <!-- <button @click="getDeviceIP(device)">獲取設備IP</button>
         <button @click="setTCPIP(device)">設定TCP端口</button>
         <button @click="connectDevice(device)">設備連接</button> -->
-        <button @click="wifiConnect(device)">無線連接</button>
+        <button @click="wifiConnect(device)">眼鏡連接</button>
 
         <button @click="startScrcpy(device)">影像投射</button>
       </div>
@@ -121,7 +121,7 @@ const wifiConnect = async (deviceName) => {
     await getDeviceIP(deviceName);
     await setTCPIP(deviceName);
     await connectDevice(deviceName);
-    toast("成功連接TCPIP", {
+    toast("成功連接眼鏡", {
       position: "top-center",
       autoClose: 2000,
     });
