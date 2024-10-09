@@ -38,6 +38,7 @@
     "vue-tsc": "^2.0.28"
   },
   "dependencies": {
+    "@canvasjs/vue-charts": "^1.0.4",
     "chart.js": "^4.4.3",
     "electron-is-dev": "^3.0.1",
     "electron-log": "^5.1.7",

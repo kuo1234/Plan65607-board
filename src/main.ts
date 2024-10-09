@@ -10,12 +10,13 @@ import './demos/ipc'
 // import './demos/node'
 
 import Vue3Toastify, { type ToastContainerOptions } from 'vue3-toastify';
-
+import CanvasJSChart from '@canvasjs/vue-charts';
 
 
 
 createApp(App)
   .use(router)
+  .use(CanvasJSChart)
   .use(Vue3Toastify, {
     autoClose: 300,
   } as ToastContainerOptions)
