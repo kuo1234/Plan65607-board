@@ -38,6 +38,18 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   },
   onLogMessage: (callback) => ipcRenderer.on('log-message', (event, message) => callback(message)),
   onLogError: (callback) => ipcRenderer.on('log-error', (event, error) => callback(error)),
+  fetchSensorData: async () => {
+    try {
+      const response = await fetch('http://192.168.2.121:8080');
+      if (!response.ok) throw new Error(`Network response was not ok, status: ${response.status}`);
+      const data = await response.json();
+      console.log("Fetched sensor data:", data);  // 增加日誌顯示資料
+      return data;
+    } catch (error) {
+      console.error("Failed to fetch sensor data:", error);
+      return null;
+    }
+  }
 });
 
 
