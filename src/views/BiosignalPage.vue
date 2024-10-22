@@ -176,7 +176,7 @@ height: "360px",
 // 更新圖表資料
 const updateCharts = async () => {
     try {
-        const data = await window.electronAPI.fetchSensorData();
+        const data = await window.electronAPI.getSensorData();
         if (!data) {
             console.error("No data received from sensor.");
             setTimeout(updateCharts, 1000);  // 重試間隔時間
