@@ -5,6 +5,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, exec } from "child_process";
 import path from "path";
+import { SerialPort } from "serialport"; // 新增 Serial Port 支援
+import { ReadlineParser } from '@serialport/parser-readline'; // 用來解析 Serial 資料
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -79,6 +81,9 @@ async function createWindow() {
     win.loadFile(indexHtml);
   }
 
+  // 設置 Serial Port 並開始監聽
+  setupSerialPort();
+
   // Test actively push message to the Electron-Renderer
   win.webContents.on("did-finish-load", () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
@@ -129,6 +134,61 @@ async function createWindow() {
   }
 }
 
+let latestData = {};
+let buffer = ''; // 暫存未完成的 JSON 資料
+let port; // 將 SerialPort 變數移到外部，方便重新初始化
+function setupSerialPort() {
+  try {
+    port = new SerialPort({ path: '/dev/ttyACM0', baudRate: 115200 });
+    const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+    parser.on('data', (chunk) => {
+      buffer += chunk; // 累加收到的資料
+
+      try {
+        const jsonData = JSON.parse(buffer); // 嘗試解析 JSON
+        latestData = jsonData; // 更新最新的感測器資料
+        // console.log(jsonData);
+
+        // 傳遞資料給前端
+        if (win) {
+          win.webContents.send('serial-data', jsonData);
+        }
+
+        buffer = ''; // 清空 buffer，準備下一筆資料
+      } catch (error) {
+        if (!error.message.includes('Unexpected end of JSON input')) {
+          console.error('JSON 解析錯誤:', error, 'Received:', buffer);
+          buffer = ''; // 若資料格式錯誤則清空 buffer
+        }
+      }
+    });
+
+    port.on('error', (err) => {
+      console.error('Serial Port 錯誤:', err);
+      retrySetupSerialPort(); // 發生錯誤時重新嘗試連接
+    });
+
+  } catch (error) {
+    console.error('初始化 Serial Port 失敗:', error);
+    retrySetupSerialPort(); // 初始化失敗時也進行重試
+  }
+}
+
+// 定義自動重試的函數
+function retrySetupSerialPort() {
+  console.log('1 秒後重試 Serial Port 連接...');
+  setTimeout(() => {
+    setupSerialPort(); // 每秒重試一次連接
+  }, 1000);
+}
+
+
+
+// 在 IPC 中提供獲取最新資料的 Promise 接口
+ipcMain.handle('get-latest-sensor-data', async () => {
+  return latestData; // 返回最新的感測器資料
+});
 
 
 app.on("window-all-closed", () => {
