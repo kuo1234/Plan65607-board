@@ -225,6 +225,17 @@ function retrySetupSerialPort() {
   }, 1000);
 }
 
+// 處理重新執行 Pico W 程式的指令
+ipcMain.on('restart-pico-w', () => {
+  if (port && port.isOpen) {
+    console.log('Restarting main.py on Pico W...');
+    port.write('\x03'); // Ctrl+C 停止目前程式
+    setTimeout(() => port.write('import machine; machine.reset()\r'), 500); // 重啟
+  } else {
+    console.error('Serial port is not open.');
+  }
+});
+
 
 
 // 在 IPC 中提供獲取最新資料的 Promise 接口
