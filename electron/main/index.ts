@@ -134,12 +134,49 @@ async function createWindow() {
   }
 }
 
+
 let latestData = {};
 let buffer = ''; // 暫存未完成的 JSON 資料
 let port; // 將 SerialPort 變數移到外部，方便重新初始化
-function setupSerialPort() {
+
+async function listAvailablePorts() {
   try {
-    port = new SerialPort({ path: '/dev/ttyACM0', baudRate: 115200 });
+    const ports = await SerialPort.list(); // 列出所有可用 Serial Port
+    console.log('Available Serial Ports:', ports);
+
+    if (ports.length === 0) {
+      console.error('No serial ports found.');
+      return null;
+    }
+
+    // 嘗試找到 MicroPython 裝置
+    const picoPort = ports.find((p) =>
+      p.manufacturer && p.manufacturer.includes('MicroPython')
+    );
+
+    if (picoPort) {
+      console.log(`Pico W detected at ${picoPort.path}`);
+      return picoPort.path;
+    } else {
+      console.warn('MicroPython device not detected. Using first available port.');
+      return ports[0].path; // 若找不到，使用第一個可用的 Port
+    }
+  } catch (error) {
+    console.error('Failed to list serial ports:', error);
+    return null;
+  }
+}
+
+// 初始化 Serial Port
+async function setupSerialPort() {
+  const portPath = await listAvailablePorts();
+  if (!portPath) {
+    console.error('No available serial port to open.');
+    return;
+  }
+
+  try {
+    port = new SerialPort({ path: portPath, baudRate: 115200 });
     const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
 
     parser.on('data', (chunk) => {
@@ -148,7 +185,7 @@ function setupSerialPort() {
       try {
         const jsonData = JSON.parse(buffer); // 嘗試解析 JSON
         latestData = jsonData; // 更新最新的感測器資料
-        // console.log(jsonData);
+        // console.log('Received Data:', jsonData);
 
         // 傳遞資料給前端
         if (win) {
@@ -167,6 +204,11 @@ function setupSerialPort() {
     port.on('error', (err) => {
       console.error('Serial Port 錯誤:', err);
       retrySetupSerialPort(); // 發生錯誤時重新嘗試連接
+    });
+
+    port.on('close', () => {
+      console.warn('Serial Port closed. Retrying connection...');
+      retrySetupSerialPort(); // 若連線中斷，自動重試
     });
 
   } catch (error) {
