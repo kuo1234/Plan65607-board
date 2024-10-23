@@ -41,7 +41,8 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   // 提供感測器資料的 Promise 接口
   getSensorData: async () => {
     return await ipcRenderer.invoke('get-latest-sensor-data');
-  }
+  },
+  restartPicoW: () => ipcRenderer.send('restart-pico-w'),
 });
 
 
