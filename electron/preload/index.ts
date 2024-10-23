@@ -31,25 +31,18 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   onDisconnectAllWifiDevicesResponse: (callback) => ipcRenderer.on('disconnect-all-wifi-devices-response', (_, message) => callback(message)),
 
   onSensorDataUpdate: (callback: (data: any) => void) => {
-    ipcRenderer.on('update-data', (event, data) => callback(data));
+    ipcRenderer.on('serial-data', (event, data) => callback(data));
   },
   getDeviceData: async () => {
     return ipcRenderer.invoke('get-device-data');
   },
   onLogMessage: (callback) => ipcRenderer.on('log-message', (event, message) => callback(message)),
   onLogError: (callback) => ipcRenderer.on('log-error', (event, error) => callback(error)),
-  fetchSensorData: async () => {
-    try {
-      const response = await fetch('http://192.168.2.121:8080');
-      if (!response.ok) throw new Error(`Network response was not ok, status: ${response.status}`);
-      const data = await response.json();
-      console.log("Fetched sensor data:", data);  // 增加日誌顯示資料
-      return data;
-    } catch (error) {
-      console.error("Failed to fetch sensor data:", error);
-      return null;
-    }
-  }
+  // 提供感測器資料的 Promise 接口
+  getSensorData: async () => {
+    return await ipcRenderer.invoke('get-latest-sensor-data');
+  },
+  restartPicoW: () => ipcRenderer.send('restart-pico-w'),
 });
 
 

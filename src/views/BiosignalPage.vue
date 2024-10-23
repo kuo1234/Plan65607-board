@@ -3,6 +3,8 @@
     <div class="home-button-container">
         <!-- Put more button in this area -->
         <button @click="returnHome">返回主畫面</button>
+        <!-- 重啟按鈕 -->
+        <button @click="restartPicoW">重新執行 Pico W 程式</button>
     </div>
     <!-- 感測器數據動態圖表 -->
     <div class="charts-container">
@@ -36,6 +38,11 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { ref, reactive } from 'vue';
+
+// 使用 Window 曝露的 electronAPI 來重啟裝置
+const restartPicoW = () => {
+  window.electronAPI.restartPicoW(); // 使用預載的 API 發送重啟指令
+};
 
 // 定義響應式狀態
 const ecgChart = ref(null);
@@ -176,7 +183,7 @@ height: "360px",
 // 更新圖表資料
 const updateCharts = async () => {
     try {
-        const data = await window.electronAPI.fetchSensorData();
+        const data = await window.electronAPI.getSensorData();
         if (!data) {
             console.error("No data received from sensor.");
             setTimeout(updateCharts, 1000);  // 重試間隔時間
@@ -254,9 +261,10 @@ const returnHome = () => {
 }
 
 .charts-container {
+    margin-top: 100px;
     padding: 30px;
     width: 800px;
-    }
+}
 .chart-container {
   margin-bottom: 30px;  /* 設置每個圖表之間的 margin */
 }

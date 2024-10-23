@@ -5,6 +5,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, exec } from "child_process";
 import path from "path";
+import { SerialPort } from "serialport"; // 新增 Serial Port 支援
+import { ReadlineParser } from '@serialport/parser-readline'; // 用來解析 Serial 資料
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -79,6 +81,9 @@ async function createWindow() {
     win.loadFile(indexHtml);
   }
 
+  // 設置 Serial Port 並開始監聽
+  setupSerialPort();
+
   // Test actively push message to the Electron-Renderer
   win.webContents.on("did-finish-load", () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
@@ -129,6 +134,116 @@ async function createWindow() {
   }
 }
 
+
+let latestData = {};
+let buffer = ''; // 暫存未完成的 JSON 資料
+let port; // 將 SerialPort 變數移到外部，方便重新初始化
+
+async function listAvailablePorts() {
+  try {
+    const ports = await SerialPort.list(); // 列出所有可用 Serial Port
+    console.log('Available Serial Ports:', ports);
+
+    if (ports.length === 0) {
+      console.error('No serial ports found.');
+      return null;
+    }
+
+    // 嘗試找到 MicroPython 裝置
+    const picoPort = ports.find((p) =>
+      p.manufacturer && p.manufacturer.includes('MicroPython')
+    );
+
+    if (picoPort) {
+      console.log(`Pico W detected at ${picoPort.path}`);
+      return picoPort.path;
+    } else {
+      console.warn('MicroPython device not detected. Using first available port.');
+      return ports[0].path; // 若找不到，使用第一個可用的 Port
+    }
+  } catch (error) {
+    console.error('Failed to list serial ports:', error);
+    return null;
+  }
+}
+
+// 初始化 Serial Port
+async function setupSerialPort() {
+  latestData = null;
+  const portPath = await listAvailablePorts();
+  if (!portPath) {
+    console.error('No available serial port to open.');
+    return;
+  }
+
+  try {
+    port = new SerialPort({ path: portPath, baudRate: 115200 });
+    const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+    parser.on('data', (chunk) => {
+      buffer += chunk; // 累加收到的資料
+
+      try {
+        const jsonData = JSON.parse(buffer); // 嘗試解析 JSON
+        latestData = jsonData; // 更新最新的感測器資料
+        console.log('Received Data:', jsonData);
+
+        // 傳遞資料給前端
+        if (win) {
+          console.log('--------------');
+          win.webContents.send('serial-data', jsonData);
+        }
+
+        buffer = ''; // 清空 buffer，準備下一筆資料
+      } catch (error) {
+        if (!error.message.includes('Unexpected end of JSON input')) {
+          console.error('JSON 解析錯誤:', error, 'Received:', buffer);
+          buffer = ''; // 若資料格式錯誤則清空 buffer
+        }
+      }
+    });
+
+    port.on('error', (err) => {
+      console.error('Serial Port 錯誤:', err);
+      retrySetupSerialPort(); // 發生錯誤時重新嘗試連接
+    });
+
+    port.on('close', () => {
+      console.warn('Serial Port closed. Retrying connection...');
+      retrySetupSerialPort(); // 若連線中斷，自動重試
+    });
+
+  } catch (error) {
+    console.error('初始化 Serial Port 失敗:', error);
+    retrySetupSerialPort(); // 初始化失敗時也進行重試
+  }
+}
+
+// 定義自動重試的函數
+function retrySetupSerialPort() {
+  console.log('1 秒後重試 Serial Port 連接...');
+  setTimeout(() => {
+    setupSerialPort(); // 每秒重試一次連接
+  }, 1000);
+}
+
+// 處理重新執行 Pico W 程式的指令
+ipcMain.on('restart-pico-w', () => {
+  if (port && port.isOpen) {
+    console.log('Restarting main.py on Pico W...');
+    port.write('\x03'); // Ctrl+C 停止目前程式
+    setTimeout(() => port.write('import machine; machine.reset()\r'), 500); // 重啟
+  } else {
+    console.error('Serial port is not open.');
+  }
+});
+
+
+
+// 在 IPC 中提供獲取最新資料的 Promise 接口
+ipcMain.handle('get-latest-sensor-data', async () => {
+  return latestData; // 返回最新的感測器資料
+});
 
 
 app.on("window-all-closed", () => {
