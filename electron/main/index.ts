@@ -169,6 +169,7 @@ async function listAvailablePorts() {
 
 // 初始化 Serial Port
 async function setupSerialPort() {
+  latestData = null;
   const portPath = await listAvailablePorts();
   if (!portPath) {
     console.error('No available serial port to open.');
@@ -185,10 +186,11 @@ async function setupSerialPort() {
       try {
         const jsonData = JSON.parse(buffer); // 嘗試解析 JSON
         latestData = jsonData; // 更新最新的感測器資料
-        // console.log('Received Data:', jsonData);
+        console.log('Received Data:', jsonData);
 
         // 傳遞資料給前端
         if (win) {
+          console.log('--------------');
           win.webContents.send('serial-data', jsonData);
         }
 

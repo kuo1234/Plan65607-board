@@ -41,7 +41,7 @@ import { ref, reactive } from 'vue';
 
 // 使用 Window 曝露的 electronAPI 來重啟裝置
 const restartPicoW = () => {
-  window.electronAPI.rebootPicoW(); // 使用預載的 API 發送重啟指令
+  window.electronAPI.restartPicoW(); // 使用預載的 API 發送重啟指令
 };
 
 // 定義響應式狀態
