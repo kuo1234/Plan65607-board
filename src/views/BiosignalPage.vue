@@ -40,7 +40,7 @@ import { useRouter } from "vue-router";
 import { ref, reactive } from 'vue';
 
 // 使用 Window 曝露的 electronAPI 來重啟裝置
-const rebootDevice = () => {
+const restartPicoW = () => {
   window.electronAPI.rebootPicoW(); // 使用預載的 API 發送重啟指令
 };
 
