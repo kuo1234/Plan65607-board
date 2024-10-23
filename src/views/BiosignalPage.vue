@@ -254,9 +254,10 @@ const returnHome = () => {
 }
 
 .charts-container {
+    margin-top: 100px;
     padding: 30px;
     width: 800px;
-    }
+}
 .chart-container {
   margin-bottom: 30px;  /* 設置每個圖表之間的 margin */
 }
