@@ -3,6 +3,8 @@
     <div class="home-button-container">
         <!-- Put more button in this area -->
         <button @click="returnHome">返回主畫面</button>
+        <!-- 重啟按鈕 -->
+        <button @click="restartPicoW">重新執行 Pico W 程式</button>
     </div>
     <!-- 感測器數據動態圖表 -->
     <div class="charts-container">
@@ -36,6 +38,11 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { ref, reactive } from 'vue';
+
+// 使用 Window 曝露的 electronAPI 來重啟裝置
+const rebootDevice = () => {
+  window.electronAPI.rebootPicoW(); // 使用預載的 API 發送重啟指令
+};
 
 // 定義響應式狀態
 const ecgChart = ref(null);
