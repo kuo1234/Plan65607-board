@@ -146,25 +146,34 @@ async function listAvailablePorts() {
 
     if (ports.length === 0) {
       console.error('No serial ports found.');
-      return null;
+      return retryListPorts(); // 若無可用 Serial Port，自動重試
     }
 
     // 嘗試找到 MicroPython 裝置
-    const picoPort = ports.find((p) =>
-      p.manufacturer && p.manufacturer.includes('MicroPython')
+    const picoPort = ports.find((p) => 
+      p.vendorId && p.vendorId.includes('2E8A') // MicroPython Vendor ID
     );
 
     if (picoPort) {
       console.log(`Pico W detected at ${picoPort.path}`);
-      return picoPort.path;
+      return picoPort.path; // 找到符合的 Port，回傳路徑
     } else {
-      console.warn('MicroPython device not detected. Using first available port.');
-      return ports[0].path; // 若找不到，使用第一個可用的 Port
+      console.warn('MicroPython device not detected. Retrying...');
+      return retryListPorts(); // 若未找到符合的 Port，自動重試
     }
   } catch (error) {
     console.error('Failed to list serial ports:', error);
-    return null;
+    return retryListPorts(); // 若發生錯誤，自動重試
   }
+}
+
+// 定義重試機制，每秒重試一次
+function retryListPorts() {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(listAvailablePorts()); // 每秒重試一次
+    }, 1000); // 重試間隔 1 秒
+  });
 }
 
 // 初始化 Serial Port
