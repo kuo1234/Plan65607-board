@@ -151,7 +151,8 @@ async function listAvailablePorts() {
 
     // 嘗試找到 MicroPython 裝置
     const picoPort = ports.find((p) => 
-      p.vendorId && p.vendorId.includes('2E8A') // MicroPython Vendor ID
+      (p.vendorId && p.vendorId.includes('2E8A')) ||
+    (p.vendorId && p.vendorId.includes('2e8a'))// MicroPython Vendor ID
     );
 
     if (picoPort) {
