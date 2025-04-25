@@ -1,33 +1,35 @@
 <template>
-	<!-- <<<<< 按鈕 <<<<<  -->
-	<div class="home-button-container">
-		<button @click="returnHome">返回主畫面</button>
-		<button @click="restartPicoW">重新執行 Pico W 程式</button>
-	</div>
-
-	<!-- <<<<< 控制圖表顯示的 CheckBox 清單 <<<<<  -->
-	<div class="checkbox-container">
-		<div v-for="(chart, key) in charts" :key="key">
-			<label>
-				<input type="checkbox" v-model="chart.visible" />
-				{{ chart.label }}
-			</label>
+	<div class="main-container">
+		<!-- <<<<< 按鈕區塊 <<<<< -->
+		<div class="home-button-container">
+			<button @click="returnHome">返回主畫面</button>
+			<button @click="restartPicoW">重新執行 Pico W 程式</button>
 		</div>
-	</div>
 
-	<!-- <<<<< 感測器數據動態圖表 <<<<<  -->
-	<div class="charts-container">
-		<div
-			v-for="(chart, key) in charts"
-			:key="key"
-			class="chart-container"
-			v-show="chart.visible"
-		>
-			<CanvasJSChart
-				:options="chart.options"
-				:style="styleOptions"
-				@chart-ref="(instance) => setChartInstance(key, instance)"
-			/>
+		<!-- <<<<< CheckBox 控制區塊 <<<<< -->
+		<div class="checkbox-container">
+			<div v-for="(chart, key) in charts" :key="key">
+				<label>
+					<input type="checkbox" v-model="chart.visible" />
+					{{ chart.label }}
+				</label>
+			</div>
+		</div>
+
+		<!-- <<<<< 感測器數據動態圖表 <<<<<  -->
+		<div class="charts-container">
+			<div
+				v-for="(chart, key) in charts"
+				:key="key"
+				class="chart-container"
+				v-show="chart.visible"
+			>
+				<CanvasJSChart
+					:options="chart.options"
+					:style="styleOptions"
+					@chart-ref="(instance) => setChartInstance(key, instance)"
+				/>
+			</div>
 		</div>
 	</div>
 </template>
@@ -80,10 +82,22 @@ const charts = reactive({
 		options: createChartOptions("Temperature", "°C"), 
 		instance: null 
 	},
+	humidity: { 
+		label: "Humidity", 
+		visible: true, 
+		options: createChartOptions("Humidity Data", "Humidity (%)"), 
+		instance: null 
+	},
 	muscle_value: { 
 		label: "Muscle Activity", 
 		visible: true, 
 		options: createChartOptions("Muscle Data", "Muscle Activity"), 
+		instance: null 
+	},
+	tmp102_temperature: { 
+		label: "Human Body Temperature", 
+		visible: true, 
+		options: createChartOptions("Human Body Temperature", "°C"), 
 		instance: null 
 	},
 	hr_value: { 
@@ -109,18 +123,6 @@ const charts = reactive({
 		}), 
 		instance: null ,
 		
-	},
-	humidity: { 
-		label: "Humidity", 
-		visible: true, 
-		options: createChartOptions("Humidity Data", "Humidity (%)"), 
-		instance: null 
-	},
-	tmp102_temperature: { 
-		label: "Human Body Temperature", 
-		visible: true, 
-		options: createChartOptions("Human Body Temperature", "°C"), 
-		instance: null 
 	},
 	spo2_value: { 
 		label: "SPO2",
@@ -204,6 +206,9 @@ const updateCharts = async () => {
 				}
 
 				// 重新渲染圖表
+				chartInstance.options.axisX.viewportMinimum = Math.max(0, xVal.value - 50);
+				chartInstance.options.axisX.viewportMaximum = xVal.value + 1;
+
 				charts[key].instance?.render();
 			}
 		}
@@ -228,36 +233,49 @@ const styleOptions = {
 </script>
 
 <style scoped>
+
+.main-container {
+	width: 100vw;
+	/* padding: 10px; */
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
 .home-button-container {
-	position: absolute;
-	top: 20px;
-	left: 20px;
 	display: flex;
 	gap: 10px;
-	margin: 20px;
+	flex-wrap: wrap;
+	margin-bottom: 10px;
 }
 
 .checkbox-container {
-	position: absolute;
-	top: 100px;
-	left: 100px;
 	display: flex;
+	flex-wrap: wrap;
 	gap: 10px;
-	margin: 20px;
 }
 
 .charts-container {
-	margin-top: 100px;
-	padding: 30px;
-	width: 800px;
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 20px;
+	width: 100%;
+	box-sizing: border-box;
 }
 
 .chart-container {
-	margin-bottom: 30px;
+	width: 100%;
+	background-color: #fff;
+	border-radius: 10px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	padding: 10px;
+	box-sizing: border-box;
 }
 
 /* 調整 CanvasJS 圖表匯出按鈕的大小 */
 .canvasjs-chart-toolbar button {
 	transform: scale(1.5);
 }
+
 </style>
