@@ -15,20 +15,21 @@
 				</label>
 			</div>
 		</div>
-
-		<!-- <<<<< 感測器數據動態圖表 <<<<<  -->
-		<div class="charts-container">
-			<div
-				v-for="(chart, key) in charts"
-				:key="key"
-				class="chart-container"
-				v-show="chart.visible"
-			>
-				<CanvasJSChart
-					:options="chart.options"
-					:style="styleOptions"
-					@chart-ref="(instance) => setChartInstance(key, instance)"
-				/>
+		<div class="scrollable-charts-container">
+			<!-- <<<<< 感測器數據動態圖表 <<<<<  -->
+			<div class="charts-container">
+				<div
+					v-for="(chart, key) in charts"
+					:key="key"
+					class="chart-container"
+					v-show="chart.visible"
+				>
+					<CanvasJSChart
+						:options="chart.options"
+						:style="styleOptions"
+						@chart-ref="(instance) => setChartInstance(key, instance)"
+					/>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -82,22 +83,10 @@ const charts = reactive({
 		options: createChartOptions("Temperature", "°C"), 
 		instance: null 
 	},
-	humidity: { 
-		label: "Humidity", 
-		visible: true, 
-		options: createChartOptions("Humidity Data", "Humidity (%)"), 
-		instance: null 
-	},
 	muscle_value: { 
 		label: "Muscle Activity", 
 		visible: true, 
 		options: createChartOptions("Muscle Data", "Muscle Activity"), 
-		instance: null 
-	},
-	tmp102_temperature: { 
-		label: "Human Body Temperature", 
-		visible: true, 
-		options: createChartOptions("Human Body Temperature", "°C"), 
 		instance: null 
 	},
 	hr_value: { 
@@ -123,6 +112,18 @@ const charts = reactive({
 		}), 
 		instance: null ,
 		
+	},
+	humidity: { 
+		label: "Humidity", 
+		visible: true, 
+		options: createChartOptions("Humidity Data", "Humidity (%)"), 
+		instance: null 
+	},
+	tmp102_temperature: { 
+		label: "Human Body Temperature", 
+		visible: true, 
+		options: createChartOptions("Human Body Temperature", "°C"), 
+		instance: null 
 	},
 	spo2_value: { 
 		label: "SPO2",
@@ -206,9 +207,6 @@ const updateCharts = async () => {
 				}
 
 				// 重新渲染圖表
-				chartInstance.options.axisX.viewportMinimum = Math.max(0, xVal.value - 50);
-				chartInstance.options.axisX.viewportMaximum = xVal.value + 1;
-
 				charts[key].instance?.render();
 			}
 		}
@@ -233,22 +231,30 @@ const styleOptions = {
 </script>
 
 <style scoped>
-
 .main-container {
-	width: 100vw;
-	/* padding: 10px; */
-	box-sizing: border-box;
-	display: flex;
-	flex-direction: column;
-	gap: 20px;
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	margin: 20px;
 }
 
 .home-button-container {
 	display: flex;
 	gap: 10px;
 	flex-wrap: wrap;
-	margin-bottom: 10px;
+	margin: 10px;
 }
+
+.scrollable-charts-container {
+	overflow-y: auto;
+	max-height: 80vh; /* 限制最大高度 */
+	padding: 10px;
+	margin: 30px;
+	border-radius: 10px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 
 .checkbox-container {
 	display: flex;
@@ -260,8 +266,9 @@ const styleOptions = {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
 	gap: 20px;
-	width: 100%;
-	box-sizing: border-box;
+	/* background-color: aqua; */
+	/* width: 100%; */
+	/* box-sizing: border-box; */
 }
 
 .chart-container {
@@ -277,5 +284,4 @@ const styleOptions = {
 .canvasjs-chart-toolbar button {
 	transform: scale(1.5);
 }
-
 </style>
