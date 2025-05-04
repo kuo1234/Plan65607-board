@@ -35,6 +35,7 @@ const externalsPath = isDev
 const adbPath = path.join(externalsPath, "adb.exe");
 const scrcpyPath = path.join(externalsPath, "scrcpy.exe");
 import fs from 'fs';
+import { time } from "node:console";
 if (!fs.existsSync(adbPath)) {
   console.error("adb.exe not found at path:", adbPath);
 }
@@ -82,7 +83,7 @@ async function createWindow() {
   }
 
   // 設置 Serial Port 並開始監聽
-  setupSerialPort();
+  setupSerialPorts();
 
   // Test actively push message to the Electron-Renderer
   win.webContents.on("did-finish-load", () => {
@@ -139,10 +140,10 @@ let latestData = {};
 let buffer = ''; // 暫存未完成的 JSON 資料
 let port; // 將 SerialPort 變數移到外部，方便重新初始化
 
-async function listAvailablePorts() {
+async function listAvailablePorts() : Promise<string[]>{
   try {
     const ports = await SerialPort.list(); // 列出所有可用 Serial Port
-    console.log('Available Serial Ports:', ports);
+    // console.log('Available Serial Ports:', ports);
 
     if (ports.length === 0) {
       console.error('No serial ports found.');
@@ -150,14 +151,14 @@ async function listAvailablePorts() {
     }
 
     // 嘗試找到 MicroPython 裝置
-    const picoPort = ports.find((p) => 
-      (p.vendorId && p.vendorId.includes('2E8A')) ||
-    (p.vendorId && p.vendorId.includes('2e8a'))// MicroPython Vendor ID
+    const picoPorts = ports.filter((p) =>
+      p.vendorId && (p.vendorId.includes('2E8A') || p.vendorId.includes('2e8a'))
     );
+    
 
-    if (picoPort) {
-      console.log(`Pico W detected at ${picoPort.path}`);
-      return picoPort.path; // 找到符合的 Port，回傳路徑
+    if (picoPorts.length > 0) {
+      // console.log(`Pico W 設備數量：${picoPorts.length} \n ${picoPorts}`);
+      return picoPorts.map(p => p.path); // 找到符合的 Port，回傳路徑
     } else {
       console.warn('MicroPython device not detected. Retrying...');
       return retryListPorts(); // 若未找到符合的 Port，自動重試
@@ -169,7 +170,7 @@ async function listAvailablePorts() {
 }
 
 // 定義重試機制，每秒重試一次
-function retryListPorts() {
+function retryListPorts() : Promise<string[]>{
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve(listAvailablePorts()); // 每秒重試一次
@@ -178,62 +179,77 @@ function retryListPorts() {
 }
 
 // 初始化 Serial Port
-async function setupSerialPort() {
-  latestData = null;
-  const portPath = await listAvailablePorts();
-  if (!portPath) {
-    console.error('No available serial port to open.');
+async function setupSerialPorts() {
+  const portPaths = await listAvailablePorts();
+  if (!portPaths || portPaths.length === 0) {
+    console.error('No available serial ports to open.');
     return;
   }
+  latestData = {};
+  portPaths.forEach((path, index) => {
+    const deviceId = `device ${path}`;
+    let buffer = ''; // 每個 port 綁定自己的 buffer
+    
 
-  try {
-    port = new SerialPort({ path: portPath, baudRate: 115200 });
-    const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+    try {
+      const port = new SerialPort({ path, baudRate: 115200 });
+      const parser = port.pipe(new ReadlineParser({ delimiter: '\r' }));
 
-    parser.on('data', (chunk) => {
-      buffer += chunk; // 累加收到的資料
-
-      try {
-        const jsonData = JSON.parse(buffer); // 嘗試解析 JSON
-        latestData = jsonData; // 更新最新的感測器資料
-        console.log('Received Data:', jsonData);
-
-        // 傳遞資料給前端
-        if (win) {
-          console.log('--------------');
-          win.webContents.send('serial-data', jsonData);
+      parser.on('data', (chunk) => {
+        const cleanLine = chunk.trim(); // 若串口送來的內容是一整包，就拆多行
+    
+        // 嘗試判斷這是否可能是 JSON
+        if (cleanLine.startsWith('{') && cleanLine.endsWith('}')) {
+          try {
+            const jsonData = JSON.parse(cleanLine);
+            latestData[path] = jsonData;
+    
+            // console.log(`[device ${path}] JSON received:`, jsonData);
+            // console.log('sensor data : \n');
+            // console.log(latestData);
+    
+            if (win) {
+              win.webContents.send('serial-data', { deviceId: path, ...jsonData });
+            }
+          } catch (err) {
+            
+          }
+        } else {
+          // 非 JSON 行就略過或記錄
+          // console.warn(`[device ${path}] ⚠️ 忽略非 JSON 行:`, cleanLine);
         }
+        
+      });
+      
 
-        buffer = ''; // 清空 buffer，準備下一筆資料
-      } catch (error) {
-        if (!error.message.includes('Unexpected end of JSON input')) {
-          console.error('JSON 解析錯誤:', error, 'Received:', buffer);
-          buffer = ''; // 若資料格式錯誤則清空 buffer
-        }
-      }
-    });
+      port.on('error', (err) => {
+        console.error(`[${deviceId}] Serial Port 錯誤:`, err);
+        // 可選：針對特定 port retry
+      });
 
-    port.on('error', (err) => {
-      console.error('Serial Port 錯誤:', err);
-      retrySetupSerialPort(); // 發生錯誤時重新嘗試連接
-    });
+      port.on('close', () => {
+        console.warn(`[${deviceId}] Serial Port closed.`);
+        // 可選：針對特定 port retry
+      });
 
-    port.on('close', () => {
-      console.warn('Serial Port closed. Retrying connection...');
-      retrySetupSerialPort(); // 若連線中斷，自動重試
-    });
+    } catch (error) {
+      console.error(`[${deviceId}] 初始化失敗:`, error);
+      // 可選：針對特定 port retry
+    }
 
-  } catch (error) {
-    console.error('初始化 Serial Port 失敗:', error);
-    retrySetupSerialPort(); // 初始化失敗時也進行重試
-  }
+    
+
+  });
+
+  
 }
+
 
 // 定義自動重試的函數
 function retrySetupSerialPort() {
   console.log('1 秒後重試 Serial Port 連接...');
   setTimeout(() => {
-    setupSerialPort(); // 每秒重試一次連接
+    setupSerialPorts(); // 每秒重試一次連接
   }, 1000);
 }
 
@@ -252,6 +268,10 @@ ipcMain.on('restart-pico-w', () => {
 
 // 在 IPC 中提供獲取最新資料的 Promise 接口
 ipcMain.handle('get-latest-sensor-data', async () => {
+  // console.log('######################################');
+  // console.log(latestData);
+  // console.log(Date.now());
+  // console.log('*************************************');
   return latestData; // 返回最新的感測器資料
 });
 
