@@ -415,23 +415,29 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
   const scrcpyProcess = spawn(
     scrcpyPath,
     [
-      "-s",
-      deviceIP,
-      "--video-bit-rate",
-      "2M",
-      "--max-fps",
-      "15",
+      "-s", deviceIP,
+      "--video-bit-rate", "2M",
+      "--max-fps", "15",
       "--no-audio",
-      "--crop",
-      "2744:1544:20:350",
-      "--rotation-offset",
-      "22",
-      "--scale",
-      "159",
-      "--position-x-offset",
-      "-170",
-      "--position-y-offset",
-      "-190",
+    
+      // 1) 裁切 (WxH:X:Y) —— 保留
+      "--crop", "2044:1444:20:350",
+    
+      // 2) GPU 端任意角度旋轉
+      "--angle", "22",
+    
+      // 3) 鎖定編碼最長邊 (防止動態重編碼)
+      "--max-size", "2044",
+    
+      // 4) 啟動時鎖定視窗大小＝裁切後尺寸
+      "--window-width", "1000",
+      "--window-height", "800",
+    
+      // 5) 視窗屬性（可選）
+      "--window-x", "100",
+      "--window-y", "100",
+      "--window-title", "Quest3",
+      
     ],
     { shell: true }
   ); // 在 Windows 上運行時，可能需要設置 shell: true

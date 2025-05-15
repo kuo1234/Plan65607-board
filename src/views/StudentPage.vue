@@ -12,7 +12,7 @@
         <!-- <button @click="getDeviceIP(device)">獲取設備IP</button>
         <button @click="setTCPIP(device)">設定TCP端口</button>
         <button @click="connectDevice(device)">設備連接</button> -->
-        <button @click="wifiConnect(device)">眼鏡連接</button>
+        <!-- <button @click="wifiConnect(device)">眼鏡連接</button> -->
 
         <button @click="startScrcpy(device)">影像投射</button>
       </div>
