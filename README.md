@@ -45,5 +45,5 @@ scrcpy整合在src/externals/
 
 生理量測開發紀錄 : 
 ```
-https://hackmd.io/87GuoGqiTBOlXQ3f43cdNQ#%E6%95%99%E5%AE%98%E5%8F%B0%E5%B0%88%E6%A1%88
+https://hackmd.io/@fTxqhAHpTFupDjUmk0d4vQ/rkQ4uHBlex
 ```
