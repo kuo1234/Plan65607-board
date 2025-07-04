@@ -37,7 +37,17 @@ npm run build
 
 ## 其他
 
+UI 與事件邏輯寫在 Vue 組件中（例如：components/HelloWorld.vue、views/StudentPage.vue、views/BiosignalPage.vue）。
 
+若需要呼叫系統層級的功能（如執行 ADB 指令、啟動 scrcpy、使用 child_process），則需透過 Electron 的 IPC 模型溝通：
+
+- Vue 呼叫前端暴露的 API（window.electronAPI）
+
+- Preload（electron/preload/index.ts） 透過 contextBridge 將允許的方法注入 window
+
+- Main（electron/main/index.ts） 實際處理業務邏輯（包含 child_process 等 Node.js 模組）
+
+---
 scrcpy整合在src/externals/
 這邊不要動到
 不然學員畫面投影功能會有錯誤
