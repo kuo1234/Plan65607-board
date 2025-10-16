@@ -14,59 +14,96 @@
         <!-- 狀態指示 -->
         <div class="status-list">
           <span v-for="group in sensorCharts" :key="group.label">
-            <span v-for="item in group.statusList" :key="item.label" :class="['status-indicator', item.status]">
+            <span
+              v-for="item in group.statusList"
+              :key="item.label"
+              :class="['status-indicator', item.status]"
+              :title="item.tooltip || ''"
+            >
               {{ item.label }}
             </span>
           </span>
         </div>
 
-        <!-- ECG 模式切換 -->
+        <!-- ECG 控制（只保留包絡；原始 ADC） -->
         <div v-if="sensorCharts.ecg_group" class="norm-control">
-          <label>ECG 顯示：
-            <select v-model="sensorCharts.ecg_group.runtime.normMode"
-              @change="onNormModeChanged(sensorCharts.ecg_group)">
-              <option value="z">z-score（預設）</option>
-              <option value="pct">%Δ 基線</option>
-              <option value="raw">原始值（ADC）</option>
-            </select>
-          </label>
-          <label style="margin-left:8px;">
-            <input type="checkbox" v-model="sensorCharts.ecg_group.runtime.useEnvelope"
-              @change="onNormModeChanged(sensorCharts.ecg_group)" />
-            ECG 包絡
+          <label>
+            <input
+              type="checkbox"
+              v-model="sensorCharts.ecg_group.runtime.useEnvelope"
+              @change="onEcgModeChanged(sensorCharts.ecg_group)"
+            />
+            ECG 包絡（以原始 ADC 計算）
           </label>
           <small class="muted">
-            視窗 {{ sensorCharts.ecg_group.runtime.windowLen / 10 }}s，基線 {{ sensorCharts.ecg_group.runtime.baselineLen / 10
-            }}s
+            包絡視窗 {{ sensorCharts.ecg_group.runtime.ecgEnvWin / 10 }}s（@10Hz）
           </small>
         </div>
 
-        <!-- EMG 模式切換 -->
+        <!-- EMG 控制（只保留包絡；原始 ADC） + 一鍵校準 -->
         <div v-if="sensorCharts.emg_group" class="norm-control">
-          <label>EMG 顯示：
-            <select v-model="sensorCharts.emg_group.runtime.normMode"
-              @change="onNormModeChanged(sensorCharts.emg_group)">
-              <option value="z">z-score（預設）</option>
-              <option value="pct">%Δ 基線</option>
-              <option value="raw">原始值（ADC）</option>
-            </select>
+          <label>
+            <input
+              type="checkbox"
+              v-model="sensorCharts.emg_group.runtime.useEnvelope"
+              @change="onEmgModeChanged(sensorCharts.emg_group)"
+            />
+            EMG 包絡（以原始 ADC 計算）
           </label>
-          <label style="margin-left:8px;">
-            <input type="checkbox" v-model="sensorCharts.emg_group.runtime.useEnvelope"
-              @change="onNormModeChanged(sensorCharts.emg_group)" />
-            EMG 包絡
-          </label>
-          <small class="muted">
-            視窗 {{ sensorCharts.emg_group.runtime.windowLen / 10 }}s，基線 {{ sensorCharts.emg_group.runtime.baselineLen / 10
-            }}s
+
+          <button
+            class="calib-btn"
+            :disabled="sensorCharts.emg_group.runtime.calibActive"
+            @click="startEmgCalibration(sensorCharts.emg_group)"
+            title="按下後請用力收縮 3 秒"
+          >
+            {{ sensorCharts.emg_group.runtime.calibActive ? '校準中…' : '校準 %MVC' }}
+          </button>
+
+          <button
+            class="calib-reset-btn"
+            :disabled="sensorCharts.emg_group.runtime.calibActive || (!sensorCharts.emg_group.runtime.mvcMax)"
+            @click="resetEmgCalibration(sensorCharts.emg_group)"
+            title="清除已校準的 MVC 與基線"
+          >
+            重置校準
+          </button>
+
+          <small class="muted" v-if="sensorCharts.emg_group.runtime.calibActive">
+            仍需 {{ sensorCharts.emg_group.runtime.calibRemainMs / 1000 }}s …
           </small>
+          <small class="muted" v-else>
+            視窗 {{ sensorCharts.emg_group.runtime.emgEnvWin / 10 }}s（@10Hz）
+            <span v-if="sensorCharts.emg_group.runtime.mvcMax">
+              ，MVC={{ sensorCharts.emg_group.runtime.mvcMax.toFixed(0) }}，Rest={{ sensorCharts.emg_group.runtime.restBase.toFixed(0) }}
+            </span>
+          </small>
+        </div>
+
+        <!-- EMG 一眼辨識：徽章 + 量表 -->
+        <div v-if="sensorCharts.emg_group" class="emg-activation">
+          <span :class="['badge', sensorCharts.emg_group.runtime.active ? 'on' : 'off']">
+            {{ sensorCharts.emg_group.runtime.active ? 'EMG ACTIVE' : 'EMG IDLE' }}
+          </span>
+          <div class="meter" :title="`強度 ${(sensorCharts.emg_group.runtime.level01*100).toFixed(0)}%`">
+            <div class="fill" :style="{ width: (sensorCharts.emg_group.runtime.level01*100)+'%' }"></div>
+          </div>
         </div>
 
         <!-- 圖表群（垂直堆疊） -->
         <div class="charts-container-vertical">
-          <div v-for="(group, key) in sensorCharts" :key="key" v-show="group.visible" class="chart-container">
-            <CanvasJSChart :options="group.options" :style="styleOptions"
-              @chart-ref="(instance) => setChartInstance(path, key, instance)" />
+          <div
+            v-for="(group, key) in sensorCharts"
+            :key="key"
+            v-show="group.visible"
+            class="chart-container"
+            :class="(key==='emg_group' && group.runtime?.active) ? 'chart-active' : ''"
+          >
+            <CanvasJSChart
+              :options="group.options"
+              :style="styleOptions"
+              @chart-ref="(instance) => setChartInstance(path, key, instance)"
+            />
           </div>
         </div>
 
@@ -115,22 +152,17 @@ const charts = reactive({});
 
 // ===== 狀態範圍（可依需求調整）=====
 const TH = {
-  // ECG/EMG 狀態：以訊號品質/包絡幅度為主，不看標準化值
-  ecg_quality: { rms_low: 150, rms_high: 8000, clip_ratio_high: 0.02 }, // ADC LSB
-  emg_env: { low: 20, high: 1200 }, // 整流後移動平均的包絡（ADC LSB）
-
-  // GSR：µS
+  ecg_quality: { rms_low: 150, rms_high: 8000, clip_ratio_high: 0.02 }, // 供狀態燈參考
+  emg_env: { low: 20, high: 1200 }, // EMG 包絡（ADC）映射 0~100% 的預設範圍（未校準時用）
+  emg_activation: { on: 120, off: 90, debounce_ms: 200 }, // 遲滯 + 去抖
   gsr_uS: { low: 1, high: 20 },
-
-  // 溫溼度/HR/SpO2：實際單位
   body_temp: { low: 36.1, high: 37.2, fever: 38.0 },
   env_temp: { low: 20, high: 35 },
-  humidity: { low: 30, high: 70 }, // %
-  hr: { low: 60, high: 100 },      // bpm
-  spo2: { low: 90, normal: 95 },   // %
+  humidity: { low: 30, high: 70 },
+  hr: { low: 60, high: 100 },
+  spo2: { low: 90, normal: 95 },
 };
 
-// 新掛載圖用的 style；已掛載圖會直接改 instance.options.height
 const styleOptions = reactive({ width: "100%", height: "360px" });
 const chartHeight = ref("360px");
 
@@ -190,48 +222,12 @@ function getStatus(value, key, extra = {}) {
     if (value < TH.spo2.normal) return "low";
     return "normal";
   }
-  // 其他（含 ecg/emg）預設 normal，實際會在群組專屬邏輯中以品質評估
   return "normal";
 }
 
-// ===== 標準化工具 =====
-function mean(arr) { return arr.reduce((a, b) => a + b, 0) / Math.max(arr.length, 1); }
-function std(arr) {
-  if (arr.length === 0) return 1;
-  const m = mean(arr);
-  const v = arr.reduce((a, b) => a + (b - m) * (b - m), 0) / arr.length;
-  return Math.sqrt(v) || 1;
-}
-function normalizeValue(groupRuntime, key, v) {
-  const rt = groupRuntime;
-  const buf = rt.buffers[key] || (rt.buffers[key] = []);
-  buf.push(v);
-  if (buf.length > rt.windowLen) buf.shift();
-
-  const mode = rt.normMode;
-  if (mode === 'raw') return v;
-
-  if (mode === 'z') {
-    return (v - mean(buf)) / std(buf);
-  }
-
-  if (mode === 'pct') {
-    if (rt.baselines[key] == null) {
-      if (buf.length >= rt.baselineLen) {
-        rt.baselines[key] = mean(buf.slice(0, rt.baselineLen));
-      } else {
-        rt.baselines[key] = mean(buf);
-      }
-    }
-    const b = rt.baselines[key] || 1;
-    return ((v - b) / b) * 100;
-  }
-  return v;
-}
-
-// ===== 包絡與品質評估 =====
-// 全波整流 + 移動平均（EMG/ECG用）
-function pushEnvelope(rt, bufName, v, winDefault) {
+// ===== 包絡 / 品質評估（ECG/EMG 用）=====
+function mean(arr){ return arr.reduce((a,b)=>a+b,0)/Math.max(arr.length,1); }
+function pushEnvelope(rt, bufName, v, winDefault){
   const name = bufName || 'envBuf';
   const winProp = (bufName === 'ecgEnvBuf') ? 'ecgEnvWin' : (bufName === 'emgEnvBuf') ? 'emgEnvWin' : 'envWin';
   const buf = rt[name] || (rt[name] = []);
@@ -240,14 +236,12 @@ function pushEnvelope(rt, bufName, v, winDefault) {
   if (buf.length > win) buf.shift();
   return mean(buf);
 }
-
-// 估算 ECG 訊號品質（RMS + 夾飽和率）
-function updateEcgQuality(rt, raw) {
+function updateEcgQuality(rt, raw){
   const b = rt.ecgRawBuf || (rt.ecgRawBuf = []);
   b.push(Number(raw) || 0);
   if (b.length > rt.qualityWin) b.shift();
-  const m = mean(b), rms = Math.sqrt(mean(b.map(x => (x - m) * (x - m))));
-  const clipCnt = b.filter(x => x < 50 || x > 65485).length; // 接近 0/滿刻度
+  const m = mean(b), rms = Math.sqrt(mean(b.map(x => (x-m)*(x-m))));
+  const clipCnt = b.filter(x => x < 50 || x > 65485).length;
   const clipRatio = b.length ? clipCnt / b.length : 0;
 
   let status = "normal";
@@ -283,23 +277,18 @@ function initialChart(path) {
       label: "ECG",
       visible: true,
       dataKeys: [{ key: "ecg_value", label: "ECG", color: "red" }],
-      options: createChartOptions("ECG", "z-score", {
-        axisY: { labelFontSize, title: "z-score", titleFontSize: labelTitleFontSize },
+      options: createChartOptions("ECG", "ADC (raw)", {
+        axisY: { labelFontSize, title: "ADC (raw)", titleFontSize: labelTitleFontSize },
         data: [{ type: "line", name: "ECG", showInLegend: true, color: "red", dataPoints: [] }],
       }),
       instance: null,
       runtime: reactive({
-        normMode: 'z',     // 'raw' | 'z' | 'pct'
-        windowLen: 150,    // 15s（10Hz）
-        baselineLen: 30,   // 3s
-        buffers: {},
-        baselines: {},
         useEnvelope: true,
         ecgEnvBuf: [],
-        ecgEnvWin: 7,      // ~700ms 平滑
-        ecgRawBuf: [],
-        qualityWin: 50,    // 5s 用於品質判斷
-        ecgQuality: { rms: 0, clipRatio: 0, status: 'normal' },
+        ecgEnvWin: 7,   // ~700ms @10Hz
+        ecgRawBuf: [],  // 供品質提示
+        qualityWin: 50,
+        ecgQuality: { rms:0, clipRatio:0, status:'normal' },
       }),
       statusList: [],
     },
@@ -307,20 +296,25 @@ function initialChart(path) {
       label: "Muscle (EMG)",
       visible: true,
       dataKeys: [{ key: "muscle_value", label: "EMG", color: "green" }],
-      options: createChartOptions("EMG", "z-score", {
-        axisY: { labelFontSize, title: "z-score", titleFontSize: labelTitleFontSize },
+      options: createChartOptions("EMG", "ADC (raw)", {
+        axisY: { labelFontSize, title: "ADC (raw)", titleFontSize: labelTitleFontSize },
         data: [{ type: "line", name: "EMG", showInLegend: true, color: "green", dataPoints: [] }],
       }),
       instance: null,
       runtime: reactive({
-        normMode: 'z',
-        windowLen: 150,
-        baselineLen: 30,
-        buffers: {},
-        baselines: {},
         useEnvelope: true,
         emgEnvBuf: [],
-        emgEnvWin: 5,      // 500ms
+        emgEnvWin: 5, // 500ms @10Hz
+        // 一眼辨識狀態
+        active: false,
+        activeChangedAt: 0,
+        level01: 0, // 0~1 強度
+        // 一鍵校準
+        calibActive: false,
+        calibEndTs: 0,
+        calibRemainMs: 0,
+        mvcMax: null,     // 校準到的最大包絡（ADC）
+        restBase: 0,      // 校準到的基線（ADC）
       }),
       statusList: [],
     },
@@ -392,11 +386,28 @@ function initialChart(path) {
   });
 }
 
-function onNormModeChanged(group) {
-  // 更新 y 軸標題
-  const mode = group.runtime?.normMode || 'raw';
-  group.options.axisY.title = (mode === 'z') ? 'z-score' : (mode === 'pct') ? '%Δ（相對基線）' : 'Signal (ADC)';
+function onEcgModeChanged(group){
+  group.options.axisY.title = "ADC (raw)";
   group.instance?.render?.();
+}
+function onEmgModeChanged(group){
+  group.options.axisY.title = "ADC (raw)";
+  group.instance?.render?.();
+}
+
+// —— 一鍵校準：開始/重置
+function startEmgCalibration(group){
+  const DURATION_MS = 3000; // 按下後連續 3 秒取峰值
+  group.runtime.calibActive = true;
+  group.runtime.calibEndTs = Date.now() + DURATION_MS;
+  group.runtime.calibRemainMs = Math.ceil((group.runtime.calibEndTs - Date.now())/1000)*1000;
+  // 暫存期間的峰值/低值（以「未標準化 ADC 包絡」為準）
+  group.runtime._calibPeak = 0;
+  group.runtime._calibMin = Number.POSITIVE_INFINITY;
+}
+function resetEmgCalibration(group){
+  group.runtime.mvcMax = null;
+  group.runtime.restBase = 0;
 }
 
 function setChartInstance(path, key, instance) {
@@ -458,7 +469,6 @@ const updateCharts = async () => {
     const frame = await window.electronAPI.getSensorData(); // { path1:{...}, path2:{...} }
     if (frame) {
       updateTabsFromData(frame);
-
       const toRender = new Set();
 
       for (const path in charts) {
@@ -475,7 +485,6 @@ const updateCharts = async () => {
             let rawValue = dataObj[entry.key];
             if (rawValue === undefined) return;
 
-            // 顯示值（displayValue）可以被轉換/標準化；狀態依「意義單位」判斷
             let displayValue = rawValue;
 
             // GSR：轉 µS 顯示並用 µS 判斷狀態
@@ -483,21 +492,85 @@ const updateCharts = async () => {
               displayValue = convertGSRtoConductance(rawValue);
               rawValue = displayValue;
             }
-            function adcToVolt(adc, Vref=3.3){ return (Number(adc)||0) / 65535 * Vref; }
-            // EMG/ECG 包絡（可選）
-            if (groupKey === "emg_group" && group.runtime?.useEnvelope) {
-              const v = adcToVolt(rawValue, 3.3);
-              // 若你確認目前供 5V 且未分壓，請先改硬體；程式只能暫時夾到顯示範圍
-              displayValue = v; // 之後再做包絡/標準化
-              displayValue = pushEnvelope(group.runtime, 'emgEnvBuf', displayValue, group.runtime.emgEnvWin);
-            }
-            if (groupKey === "ecg_group" && group.runtime?.useEnvelope) {
-              displayValue = pushEnvelope(group.runtime, 'ecgEnvBuf', displayValue, group.runtime.ecgEnvWin);
+
+            // ===== EMG：原始 ADC +（可選）包絡 + 一鍵校準 / 一眼辨識 =====
+            if (groupKey === "emg_group" && entry.key === "muscle_value") {
+              const myoOK = dataObj.muscle_ok;
+              const myoVolt = dataObj.muscle_voltage;
+              const myoReason = dataObj.muscle_reason;
+
+              if (myoOK === false) {
+                const tooltip = `EMG 異常：${myoReason || 'unknown'}，電壓=${(myoVolt ?? 0).toFixed(3)}V`;
+                group.statusList.push({ label: "EMG", status: "hold", tooltip });
+                displayValue = rawValue;
+                group.runtime.level01 = 0;
+                group.runtime.active = false;
+              } else {
+                // 圖上顯示值
+                displayValue = Number(rawValue) || 0;
+                if (group.runtime?.useEnvelope) {
+                  displayValue = pushEnvelope(group.runtime, 'emgEnvBuf', displayValue, group.runtime.emgEnvWin);
+                }
+
+                // 狀態/量表都以「未標準化 ADC 包絡」為準
+                const envForState = pushEnvelope(
+                  group.runtime,
+                  'emgEnvBuf_state',
+                  Number(dataObj["muscle_value"]) || 0,
+                  group.runtime.emgEnvWin
+                );
+
+                // ===== 校準進行中：更新峰值與低值 =====
+                if (group.runtime.calibActive) {
+                  const now = Date.now();
+                  group.runtime._calibPeak = Math.max(group.runtime._calibPeak || 0, envForState);
+                  group.runtime._calibMin = Math.min(group.runtime._calibMin || Number.POSITIVE_INFINITY, envForState);
+                  group.runtime.calibRemainMs = Math.max(0, group.runtime.calibEndTs - now);
+                  if (now >= group.runtime.calibEndTs) {
+                    // 完成：寫入 mvcMax / restBase
+                    group.runtime.mvcMax  = Math.max(1, group.runtime._calibPeak || 1);
+                    group.runtime.restBase = Math.max(0, group.runtime._calibMin || 0);
+                    group.runtime.calibActive = false;
+                    group.runtime.calibEndTs = 0;
+                    group.runtime.calibRemainMs = 0;
+                  }
+                }
+
+                // ===== level01：若已校準用 %MVC，否則用預設 low/high 區間
+                if (group.runtime.mvcMax && group.runtime.mvcMax > group.runtime.restBase) {
+                  const num = envForState - group.runtime.restBase;
+                  const den = group.runtime.mvcMax - group.runtime.restBase;
+                  group.runtime.level01 = Math.max(0, Math.min(1, num / den));
+                } else {
+                  const lo = TH.emg_env.low, hi = TH.emg_env.high;
+                  group.runtime.level01 = Math.max(0, Math.min(1, (envForState - lo) / Math.max(hi - lo, 1)));
+                }
+
+                // 一眼辨識：遲滯 + 去抖
+                const now = Date.now();
+                let nextActive = group.runtime.active;
+                const onTh  = TH.emg_activation.on;
+                const offTh = TH.emg_activation.off;
+                if (!group.runtime.active && envForState >= onTh) nextActive = true;
+                if ( group.runtime.active && envForState <= offTh) nextActive = false;
+
+                if (nextActive !== group.runtime.active) {
+                  if (now - (group.runtime.activeChangedAt || 0) >= TH.emg_activation.debounce_ms) {
+                    group.runtime.active = nextActive;
+                    group.runtime.activeChangedAt = now;
+                  }
+                } else {
+                  group.runtime.activeChangedAt = now;
+                }
+              }
             }
 
-            // 標準化（僅影響顯示）
-            if (group.runtime) {
-              displayValue = normalizeValue(group.runtime, entry.key, Number(displayValue) || 0);
+            // ===== ECG：原始 ADC +（可選）包絡 =====
+            if (groupKey === "ecg_group" && entry.key === "ecg_value") {
+              displayValue = Number(rawValue) || 0;
+              if (group.runtime?.useEnvelope) {
+                displayValue = pushEnvelope(group.runtime, 'ecgEnvBuf', displayValue, group.runtime.ecgEnvWin);
+              }
             }
 
             // 畫圖
@@ -507,30 +580,32 @@ const updateCharts = async () => {
               arr.splice(0, arr.length - 100);
             }
 
-            // 狀態：基本規則
+            // 狀態：基本規則（EMG 異常時前面已 push）
             const hold = entry.freshKey ? dataObj[entry.freshKey] === false : false;
             let status = getStatus(Number(rawValue) || 0, entry.key, { hold });
 
-            // 進階：ECG/EMG 以品質/包絡幅度覆蓋狀態
+            // ECG 以品質覆蓋狀態（提示用）
             if (groupKey === "ecg_group") {
               const q = updateEcgQuality(group.runtime, dataObj["ecg_value"]);
-              status = q.status; // low/high 來自 rms/飽和率
+              status = q.status;
             }
-            if (groupKey === "emg_group" && group.runtime?.useEnvelope) {
-              const envVal = Number(displayValue); // 已做包絡且可能標準化，但狀態要用包絡原值
-              // 這裡改用未標準化包絡：再計一次
-              const envRaw = pushEnvelope(group.runtime, 'emgEnvBuf_state', dataObj["muscle_value"], group.runtime.emgEnvWin);
+
+            // EMG 正常：用 ADC 包絡粗分等級（僅作燈號，不影響 ACTIVE 徽章）
+            if (groupKey === "emg_group" && dataObj.muscle_ok !== false && group.runtime?.useEnvelope) {
+              const envRaw = pushEnvelope(group.runtime, 'emgEnvBuf_status', Number(dataObj["muscle_value"])||0, group.runtime.emgEnvWin);
               if (envRaw < TH.emg_env.low) status = "low";
               else if (envRaw > TH.emg_env.high) status = "high";
               else status = "normal";
             }
 
-            group.statusList.push({ label: entry.label, status });
+            // EMG 異常時已 push 過燈號，避免重複
+            const isEMG = (groupKey === "emg_group" && entry.key === "muscle_value");
+            if (!(isEMG && dataObj.muscle_ok === false)) {
+              group.statusList.push({ label: entry.label, status });
+            }
+
             toRender.add(group);
           });
-
-          // 軸標題依模式
-          if (group.runtime) onNormModeChanged(group);
         }
       }
 
@@ -566,122 +641,138 @@ const restartPicoW = () => window.electronAPI.restartPicoW();
 </script>
 
 <style scoped>
-:root {
+:root{
   --title-size: clamp(18px, 2.2vw, 30px);
   --label-size: clamp(12px, 1.6vw, 20px);
   --label-title-size: clamp(12px, 1.6vw, 20px);
 }
 
-.main-container {
-  margin: 20px;
+.main-container{ margin:20px; }
+
+.home-button-container{
+  display:flex; gap:10px; flex-wrap:wrap; margin:10px;
 }
 
-.home-button-container {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 10px;
+.scrollable-charts-container{
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(clamp(320px, 40vw, 560px), 1fr);
+  gap:20px;
+  overflow-x:auto;
+  padding:10px;
+  margin:30px;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.1);
+  max-height:calc(100vh - 200px);
 }
 
-.scrollable-charts-container {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(clamp(320px, 40vw, 560px), 1fr);
-  gap: 20px;
-  overflow-x: auto;
-  padding: 10px;
-  margin: 30px;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  max-height: calc(100vh - 200px);
+.student-container{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  overflow-y:auto;
+  padding-right:6px;
 }
 
-.student-container {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding-right: 6px;
+.student-container>h2{
+  position:sticky;
+  top:0;
+  background:#fff;
+  z-index:1;
+  padding:2px 0 8px;
+  margin:0 0 8px;
 }
 
-.student-container>h2 {
-  position: sticky;
-  top: 0;
-  background: #fff;
-  z-index: 1;
-  padding: 2px 0 8px;
-  margin: 0 0 8px;
+.status-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:8px 0 14px;
 }
 
-.status-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 8px 0 14px;
+.norm-control{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0 0 10px;
+}
+.norm-control .muted{ color:#777; }
+
+/* 校準按鈕 */
+.calib-btn{
+  padding:6px 10px; border-radius:8px; border:1px solid rgba(0,0,0,.1); margin-left:8px;
+  background:#0ab; color:#fff; cursor:pointer;
+}
+.calib-btn:disabled{ opacity:.6; cursor:not-allowed; }
+.calib-reset-btn{
+  padding:6px 10px; border-radius:8px; border:1px solid rgba(0,0,0,.1); margin-left:6px;
+  background:#888; color:#fff; cursor:pointer;
+}
+.calib-reset-btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+/* EMG 一眼辨識：徽章 + 量表 */
+.emg-activation{
+  display:flex; align-items:center; gap:12px; margin:6px 0 14px;
+}
+.badge{
+  font-weight:700; padding:6px 10px; border-radius:999px; transition:all .2s ease;
+  box-shadow:0 0 0 rgba(0,0,0,0);
+}
+.badge.on{
+  color:#0a5; background:rgba(0,255,120,.12);
+  box-shadow:0 0 0 rgba(0,0,0,0), 0 0 14px rgba(0,200,120,.35);
+}
+.badge.off{
+  color:#666; background:rgba(140,140,140,.12);
+}
+.meter{
+  flex:1; height:10px; background:rgba(0,0,0,.06); border-radius:999px; overflow:hidden;
+}
+.meter .fill{
+  height:100%; width:0%;
+  background:linear-gradient(90deg, rgba(0,200,120,.85), rgba(0,180,255,.85));
+  transition:width .12s linear;
 }
 
-.norm-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px;
+/* 圖表高亮（EMG active 時） */
+.chart-container.chart-active{
+  box-shadow:0 0 0 rgba(0,0,0,0), 0 0 24px rgba(0,200,120,.35);
+  outline:2px solid rgba(0,200,120,.35);
 }
 
-.norm-control .muted {
-  color: #777;
+.checkbox-group{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:10px 0 0;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 10px 0 0;
+.charts-container-vertical{
+  display:flex;
+  flex-direction:column;
+  gap:20px;
 }
 
-.charts-container-vertical {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.chart-container {
-  width: 100%;
+.chart-container{
+  width:100%;
   height: v-bind(chartHeight);
-  padding: 0;
-  background-color: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  box-sizing: border-box;
+  padding:0;
+  background-color:#fff;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.1);
+  box-sizing:border-box;
 }
 
-.canvasjs-chart-toolbar button {
-  transform: none;
-}
+.canvasjs-chart-toolbar button{ transform:none; }
 
-.status-indicator {
-  font-weight: bold;
-  padding: 6px 5px;
-  border-radius: 6px;
-  background-color: rgba(200, 200, 200, 0.2);
+.status-indicator{
+  font-weight:bold;
+  padding:6px 5px;
+  border-radius:6px;
+  background-color:rgba(200,200,200,0.2);
 }
-
-.status-indicator.normal {
-  background-color: rgba(0, 255, 0, 0.1);
-  color: green;
-}
-
-.status-indicator.low {
-  background-color: rgba(255, 255, 0, 0.2);
-  color: goldenrod;
-}
-
-.status-indicator.high {
-  background-color: rgba(255, 0, 0, 0.1);
-  color: red;
-}
-
-.status-indicator.hold {
-  background-color: rgba(100, 100, 100, 0.15);
-  color: #666;
-}
+.status-indicator.normal{ background-color:rgba(0,255,0,0.1); color:green; }
+.status-indicator.low{ background-color:rgba(255,255,0,0.2); color:goldenrod; }
+.status-indicator.high{ background-color:rgba(255,0,0,0.1); color:red; }
+.status-indicator.hold{ background-color:rgba(100,100,100,0.15); color:#666; }
 </style>
