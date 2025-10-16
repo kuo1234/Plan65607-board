@@ -2,6 +2,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  onPicoPortsChanged: (callback) => {
+    ipcRenderer.on('pico-ports-changed', (event, portPaths) => callback(portPaths));
+  },
 editCommand: () => ipcRenderer.invoke('edit-command'),
   send: (channel, data) => {
     ipcRenderer.send(channel, data);

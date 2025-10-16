@@ -139,6 +139,7 @@ async function createWindow() {
 let latestData = {};
 let buffer = ''; // 暫存未完成的 JSON 資料
 let port; // 將 SerialPort 變數移到外部，方便重新初始化
+let picoPorts = {}; // Pico W SerialPort 實例集合
 
 async function listAvailablePorts() : Promise<string[]>{
   try {
@@ -181,68 +182,52 @@ function retryListPorts() : Promise<string[]>{
 // 初始化 Serial Port
 async function setupSerialPorts() {
   const portPaths = await listAvailablePorts();
-  if (!portPaths || portPaths.length === 0) {
-    console.error('No available serial ports to open.');
-    return;
+  // 關閉已移除的 Pico W port
+  let changed = false;
+  for (const oldPath of Object.keys(picoPorts)) {
+    if (!portPaths.includes(oldPath)) {
+      try { picoPorts[oldPath].close(); } catch {}
+      delete picoPorts[oldPath];
+      changed = true;
+    }
   }
-  latestData = {};
-  portPaths.forEach((path, index) => {
+  // 新增新插入的 Pico W port
+  portPaths.forEach((path) => {
+    if (picoPorts[path]) return;
     const deviceId = `device ${path}`;
-    let buffer = ''; // 每個 port 綁定自己的 buffer
-    
-
     try {
       const port = new SerialPort({ path, baudRate: 115200 });
+      picoPorts[path] = port;
       const parser = port.pipe(new ReadlineParser({ delimiter: '\r' }));
-
       parser.on('data', (chunk) => {
-        const cleanLine = chunk.trim(); // 若串口送來的內容是一整包，就拆多行
-    
-        // 嘗試判斷這是否可能是 JSON
+        const cleanLine = chunk.trim();
         if (cleanLine.startsWith('{') && cleanLine.endsWith('}')) {
           try {
             const jsonData = JSON.parse(cleanLine);
             latestData[path] = jsonData;
-    
-            // console.log(`[device ${path}] JSON received:`, jsonData);
-            // console.log('sensor data : \n');
-            // console.log(latestData);
-    
             if (win) {
               win.webContents.send('serial-data', { deviceId: path, ...jsonData });
             }
-          } catch (err) {
-            
-          }
-        } else {
-          // 非 JSON 行就略過或記錄
-          // console.warn(`[device ${path}] ⚠️ 忽略非 JSON 行:`, cleanLine);
+          } catch (err) {}
         }
-        
       });
-      
-
       port.on('error', (err) => {
         console.error(`[${deviceId}] Serial Port 錯誤:`, err);
-        // 可選：針對特定 port retry
       });
-
       port.on('close', () => {
         console.warn(`[${deviceId}] Serial Port closed.`);
-        // 可選：針對特定 port retry
+        delete picoPorts[path];
+        if (win) win.webContents.send('pico-ports-changed', Object.keys(picoPorts));
       });
-
+      changed = true;
     } catch (error) {
       console.error(`[${deviceId}] 初始化失敗:`, error);
-      // 可選：針對特定 port retry
     }
-
-    
-
   });
-
-  
+  // 僅在有變化時才通知前端
+  if (changed && win) win.webContents.send('pico-ports-changed', Object.keys(picoPorts));
 }
+setInterval(setupSerialPorts, 2000);
 
 
 // 定義自動重試的函數
