@@ -362,22 +362,28 @@ function initialChart(path) {
       label: "心率與血氧",
       visible: true,
       dataKeys: [
-        { key: "hr_value", label: "Heart Rate", color: "red" },
-        { key: "spo2_value", label: "SpO2", color: "blue" },
+        { key: "hr_value", label: "Heart Rate", color: "red", yAxis: "primary" },
+        { key: "spo2_value", label: "SpO2", color: "blue", yAxis: "secondary" },
       ],
-      options: createChartOptions("心率與血氧", "HR / SpO2", {
+      options: createChartOptions("心率與血氧", "Heart Rate (bpm)", {
         axisY: {
-          minimum: 40, maximum: 150,
-          labelFontSize, title: "HR / SpO2", titleFontSize: labelTitleFontSize,
+          minimum: 0, maximum: 180,
+          labelFontSize, title: "Heart Rate (bpm)", titleFontSize: labelTitleFontSize,
           stripLines: [
             { startValue: TH.hr.low, endValue: TH.hr.high, color: "rgba(0, 255, 0, 0.2)", label: `正常 HR ${TH.hr.low}–${TH.hr.high}`, labelFontColor: "green" },
+          ],
+        },
+        axisY2: {
+          minimum: 0, maximum: 100,
+          labelFontSize, title: "SpO2 (%)", titleFontSize: labelTitleFontSize,
+          stripLines: [
             { value: TH.spo2.normal, color: "rgba(255, 170, 51, 0.2)", lineDashType: "dash", label: `SpO2 正常 ≥${TH.spo2.normal}%` },
             { value: TH.spo2.low, color: "rgba(255, 0, 0, 0.2)", lineDashType: "dash", label: `SpO2 輕度缺氧 ${TH.spo2.low}%` },
           ],
         },
         data: [
-          { type: "line", name: "Heart Rate", showInLegend: true, color: "red", dataPoints: [] },
-          { type: "line", name: "SpO2", showInLegend: true, color: "blue", dataPoints: [] },
+          { type: "line", name: "Heart Rate", showInLegend: true, color: "red", dataPoints: [], axisYType: "primary" },
+          { type: "line", name: "SpO2", showInLegend: true, color: "blue", dataPoints: [], axisYType: "secondary" },
         ],
       }),
       instance: null,
@@ -578,6 +584,13 @@ const updateCharts = async () => {
             if (group.options.data[index].dataPoints.length > 100) {
               const arr = group.options.data[index].dataPoints;
               arr.splice(0, arr.length - 100);
+            }
+            
+            // 確保 HR/SpO2 等雙軸圖表的資料正確對應到各自的 Y 軸
+            if (entry.yAxis === 'secondary' && group.options.data[index].axisYType !== 'secondary') {
+              group.options.data[index].axisYType = 'secondary';
+            } else if (entry.yAxis === 'primary' && group.options.data[index].axisYType !== 'primary') {
+              group.options.data[index].axisYType = 'primary';
             }
 
             // 狀態：基本規則（EMG 異常時前面已 push）
