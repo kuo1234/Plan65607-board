@@ -497,7 +497,7 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
 
   // 使用 spawn 而不是 exec 啟動新的進程
   const scrcpyProcess = spawn(
-    `"${scrcpyPath}"`,
+    scrcpyPath,
     [
       "-s", deviceIP,
       "--video-bit-rate", "4M", // USB 連接可適當提高比特率
@@ -524,9 +524,8 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
       "--window-y", y.toString(),
       "--window-title", `Quest3 - ${deviceIP}`,
       
-    ],
-    { shell: true }
-  ); // 在 Windows 上運行時，可能需要設置 shell: true
+    ]
+  );
 
   // 監聽 stdout 和 stderr
   scrcpyProcess.stdout.on("data", (data) => {
