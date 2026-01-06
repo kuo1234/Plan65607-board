@@ -4,12 +4,24 @@
     <div class="home-button-container">
       <button @click="returnHome">返回主畫面</button>
       <button @click="restartPicoW">重新執行 Pico W 程式</button>
+      <button @click="toggleRecording" :class="{ recording: isRecording }">
+        {{ isRecording ? '停止紀錄' : '開始紀錄' }}
+      </button>
+      <button @click="$router.push('/history-page')">歷史資料查詢</button>
     </div>
 
     <!-- 學員欄（水平排列） -->
     <div class="scrollable-charts-container">
       <div class="student-container" v-for="(sensorCharts, path) in charts" :key="path">
-        <h2>{{ deviceLabelMap[path] || path }}</h2>
+        <h2>
+          {{ deviceLabelMap[path] || path }}
+          <input 
+            v-model="studentUids[path]" 
+            placeholder="輸入學員 ID" 
+            @change="updateUid(path)"
+            class="uid-input"
+          />
+        </h2>
 
         <!-- 狀態指示 -->
         <div class="status-list">
@@ -147,8 +159,13 @@ const chartUpdateFreq = 100; // ms（10 Hz）
 const tabs = ref(["All"]);
 const activeTab = ref("All");
 const deviceLabelMap = reactive({});
+const studentUids = reactive({});
 let deviceCount = ref(0);
 const charts = reactive({});
+
+function updateUid(path) {
+  window.electronAPI.setDeviceUid(path, studentUids[path]);
+}
 
 // ===== 狀態範圍（可依需求調整）=====
 const TH = {
@@ -255,7 +272,14 @@ function updateEcgQuality(rt, raw){
 const createChartOptions = (title, yAxisTitle, extraOptions = {}) => ({
   exportEnabled: true,
   title: { text: title, fontSize: chartTitleFontSize },
-  axisX: { labelFontSize, title: "Time (s)", titleFontSize: labelTitleFontSize },
+  axisX: { 
+    labelFontSize, 
+    // title: "Time", 
+    // titleFontSize: labelTitleFontSize, 
+    valueFormatString: "HH:mm:ss",
+    labelAngle: -45,
+    labelAutoFit: true
+  },
   axisY: { labelFontSize, title: yAxisTitle, titleFontSize: labelTitleFontSize },
   data: [],
   legend: {
@@ -476,11 +500,16 @@ const updateCharts = async () => {
     if (frame) {
       updateTabsFromData(frame);
       const toRender = new Set();
+      const now = new Date();
 
       for (const path in charts) {
         const sensorCharts = charts[path];
         const dataObj = frame[path];
         if (!dataObj) continue;
+
+        if (dataObj.board && deviceLabelMap[path] !== dataObj.board) {
+          deviceLabelMap[path] = dataObj.board;
+        }
 
         for (const groupKey in sensorCharts) {
           const group = sensorCharts[groupKey];
@@ -580,7 +609,7 @@ const updateCharts = async () => {
             }
 
             // 畫圖
-            group.options.data[index].dataPoints.push({ x: xVal.value, y: displayValue });
+            group.options.data[index].dataPoints.push({ x: now, y: displayValue });
             if (group.options.data[index].dataPoints.length > 100) {
               const arr = group.options.data[index].dataPoints;
               arr.splice(0, arr.length - 100);
@@ -623,7 +652,7 @@ const updateCharts = async () => {
       }
 
       for (const group of toRender) group.instance?.render?.();
-      xVal.value++;
+      // xVal.value++;
       adjustChartHeights();
     }
   } catch (err) {
@@ -651,6 +680,17 @@ function updateTabsFromData(data) {
 
 const returnHome = () => router.push("/");
 const restartPicoW = () => window.electronAPI.restartPicoW();
+
+const isRecording = ref(false);
+const toggleRecording = () => {
+  if (isRecording.value) {
+    window.electronAPI.stopRecording();
+    isRecording.value = false;
+  } else {
+    window.electronAPI.startRecording();
+    isRecording.value = true;
+  }
+};
 </script>
 
 <style scoped>
@@ -694,6 +734,17 @@ const restartPicoW = () => window.electronAPI.restartPicoW();
   z-index:1;
   padding:2px 0 8px;
   margin:0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uid-input {
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 120px;
 }
 
 .status-list{
@@ -788,4 +839,16 @@ const restartPicoW = () => window.electronAPI.restartPicoW();
 .status-indicator.low{ background-color:rgba(255,255,0,0.2); color:goldenrod; }
 .status-indicator.high{ background-color:rgba(255,0,0,0.1); color:red; }
 .status-indicator.hold{ background-color:rgba(100,100,100,0.15); color:#666; }
+
+.recording {
+  background-color: red !important;
+  color: white;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
 </style>

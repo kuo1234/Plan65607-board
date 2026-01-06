@@ -7,6 +7,7 @@ import { spawn, exec } from "child_process";
 import path from "path";
 import { SerialPort } from "serialport"; // 新增 Serial Port 支援
 import { ReadlineParser } from '@serialport/parser-readline'; // 用來解析 Serial 資料
+import mongoose from 'mongoose';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,6 +55,88 @@ const preload = join(__dirname, "../preload/index.mjs");
 const url = process.env.VITE_DEV_SERVER_URL;
 const indexHtml = join(process.env.DIST, "index.html");
 const devices: Map<string, DeviceConnection> = new Map();
+
+// MongoDB setup
+mongoose.connect('mongodb://127.0.0.1:27017/plan65607')
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('Could not connect to MongoDB', err));
+
+const SensorDataSchema = new mongoose.Schema({
+  timestamp: { type: Date, default: Date.now },
+  uid: String,
+  data: Object
+});
+
+const SensorData = mongoose.model('SensorData', SensorDataSchema);
+
+let isRecording = false;
+let recordBuffer: any[] = [];
+const FLUSH_INTERVAL = 5000; // 5 seconds
+const deviceUidMap = new Map<string, string>();
+
+ipcMain.on('set-device-uid', (event, { path, uid }) => {
+  deviceUidMap.set(path, uid);
+  console.log(`Set UID for ${path}: ${uid}`);
+});
+
+// Flush buffer to MongoDB
+const flushData = async () => {
+  if (recordBuffer.length > 0) {
+    const chunk = [...recordBuffer];
+    recordBuffer = []; // Clear buffer
+    try {
+      await SensorData.insertMany(chunk);
+      console.log(`Saved ${chunk.length} records to MongoDB`);
+    } catch (e) {
+      console.error('Error saving to MongoDB', e);
+      // Optional: Restore buffer if needed, or log error
+    }
+  }
+};
+
+// Set interval to flush data
+setInterval(flushData, FLUSH_INTERVAL);
+
+ipcMain.on('start-recording', () => {
+  isRecording = true;
+  console.log('Recording started');
+});
+
+ipcMain.on('stop-recording', () => {
+  isRecording = false;
+  flushData(); // Flush remaining data
+  console.log('Recording stopped');
+});
+
+ipcMain.handle('get-history-data', async (_, { uid, startTime, endTime }) => {
+  try {
+    const query: any = {};
+    if (uid) query.uid = uid;
+    if (startTime || endTime) {
+      query.timestamp = {};
+      if (startTime) query.timestamp.$gte = new Date(startTime);
+      if (endTime) query.timestamp.$lte = new Date(endTime);
+    }
+    
+    // Limit to 5000 points to prevent UI freeze, or implement downsampling
+    const results = await SensorData.find(query).sort({ timestamp: 1 }).lean();
+    return results;
+  } catch (err) {
+    console.error('Error fetching history:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('clear-all-data', async () => {
+  try {
+    await SensorData.deleteMany({});
+    console.log('All data cleared from MongoDB');
+    return true;
+  } catch (err) {
+    console.error('Error clearing data:', err);
+    return false;
+  }
+});
 
 interface DeviceConnection {
   ipAddress: string;
@@ -161,7 +244,7 @@ async function listAvailablePorts() : Promise<string[]>{
       // console.log(`Pico W 設備數量：${picoPorts.length} \n ${picoPorts}`);
       return picoPorts.map(p => p.path); // 找到符合的 Port，回傳路徑
     } else {
-      console.warn('MicroPython device not detected. Retrying...');
+      // console.warn('MicroPython device not detected. Retrying...');
       return retryListPorts(); // 若未找到符合的 Port，自動重試
     }
   } catch (error) {
@@ -205,6 +288,17 @@ async function setupSerialPorts() {
           try {
             const jsonData = JSON.parse(cleanLine);
             latestData[path] = jsonData;
+
+            if (isRecording) {
+              const { board, ...rest } = jsonData;
+              const userUid = deviceUidMap.get(path);
+              recordBuffer.push({
+                timestamp: new Date(),
+                uid: userUid || board || path,
+                data: rest
+              });
+            }
+
             if (win) {
               win.webContents.send('serial-data', { deviceId: path, ...jsonData });
             }
@@ -318,7 +412,7 @@ ipcMain.on("listDevices", (event) => {
     return;
   }
 
-  exec(`${adbPath} devices`, (error, stdout, stderr) => {
+  exec(`"${adbPath}" devices`, (error, stdout, stderr) => {
     console.log("adb devices output:", stdout);
     if (error) {
       const execError = `Error executing adb devices: ${error.message}`;
@@ -332,7 +426,7 @@ ipcMain.on("listDevices", (event) => {
   });
 });
 ipcMain.on("get-device-ip", (event, deviceName) => {
-  const command = `${adbPath} -s ${deviceName} shell ip route`;
+  const command = `"${adbPath}" -s ${deviceName} shell ip route`;
 
   exec(command, (error, stdout, stderr) => {
     if (error) {
@@ -355,7 +449,7 @@ ipcMain.on("get-device-ip", (event, deviceName) => {
 ipcMain.on("setTcpip", (event, deviceName) => {
 
   exec(
-    `${adbPath} -s ${deviceName} tcpip 5555`,
+    `"${adbPath}" -s ${deviceName} tcpip 5555`,
     (error, stdout, stderr) => {
       if (error) {
         console.error(`設定 TCP/IP 端口出錯: ${error.message}`);
@@ -375,7 +469,7 @@ ipcMain.on("setTcpip", (event, deviceName) => {
 });
 
 ipcMain.on("adb-connect", (event, deviceAddress) => {
-  const command = `${adbPath} connect ${deviceAddress}`;
+  const command = `"${adbPath}" connect ${deviceAddress}`;
   console.log({ deviceAddress });
   exec(command, (error, stdout, stderr) => {
     if (error) {
@@ -384,7 +478,7 @@ ipcMain.on("adb-connect", (event, deviceAddress) => {
       return;
     }
     console.log("connectsuccess");
-    exec(`${adbPath} devices`, (error, stdout, stderr) => {
+    exec(`"${adbPath}" devices`, (error, stdout, stderr) => {
       if (error) {
         console.error(`獲取設備列表時出錯: ${error.message}`);
         return;
@@ -394,17 +488,24 @@ ipcMain.on("adb-connect", (event, deviceAddress) => {
   });
 });
 
+let scrcpyWindowOffset = 0;
+
 ipcMain.on("start-scrcpy", (event, deviceIP) => {
+  const x = 100 + (scrcpyWindowOffset * 50);
+  const y = 100 + (scrcpyWindowOffset * 50);
+  scrcpyWindowOffset = (scrcpyWindowOffset + 1) % 15;
 
   // 使用 spawn 而不是 exec 啟動新的進程
   const scrcpyProcess = spawn(
-    scrcpyPath,
+    `"${scrcpyPath}"`,
     [
       "-s", deviceIP,
-      "--video-bit-rate", "2M",
+      "--video-bit-rate", "4M", // USB 連接可適當提高比特率
       "--max-fps", "15",
       "--no-audio",
-    
+      "--video-codec=h264", // 增加 h264 編碼以減少閃爍
+      "--stay-awake", // 防止設備休眠導致斷線
+
       // 1) 裁切 (WxH:X:Y) —— 保留
       "--crop", "2044:1444:20:350",
     
@@ -419,9 +520,9 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
       "--window-height", "800",
     
       // 5) 視窗屬性（可選）
-      "--window-x", "100",
-      "--window-y", "100",
-      "--window-title", "Quest3",
+      "--window-x", x.toString(),
+      "--window-y", y.toString(),
+      "--window-title", `Quest3 - ${deviceIP}`,
       
     ],
     { shell: true }
@@ -448,7 +549,7 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
 });
 
 ipcMain.on("disconnect-all-wifi-devices", (event) => {
-  exec(`${adbPath} disconnect`, (error, stdout, stderr) => {
+  exec(`"${adbPath}" disconnect`, (error, stdout, stderr) => {
     if (error) {
       console.error(`斷開無線設備時出錯: ${error}`);
       event.reply("disconnect-all-wifi-devices-response", "斷開失敗");
@@ -456,7 +557,7 @@ ipcMain.on("disconnect-all-wifi-devices", (event) => {
     }
     console.log("所有無線設備已斷開");
     event.reply("disconnect-all-wifi-devices-response", "所有無線設備已斷開");
-    exec(`${adbPath} devices`, (error, stdout, stderr) => {
+    exec(`"${adbPath}" devices`, (error, stdout, stderr) => {
       if (error) {
         console.error(`獲取設備列表時出錯: ${error.message}`);
         return;

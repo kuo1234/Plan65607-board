@@ -2,6 +2,7 @@
 import HelloWorld from '../src/components/HelloWorld.vue';
 import StudentPage from '../src/views/StudentPage.vue';
 import BiosignalPage from '../src/views/BiosignalPage.vue';
+import HistoryPage from '../src/views/HistoryPage.vue';
 
 const routes = [
   {
@@ -18,6 +19,11 @@ const routes = [
     path: '/biosignal-page',
     name: 'BiosignalPage',
     component: BiosignalPage,
+  },
+  {
+    path: '/history-page',
+    name: 'HistoryPage',
+    component: HistoryPage,
   },
 ];
 

@@ -45,6 +45,11 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   getSensorData: async () => {
     return await ipcRenderer.invoke('get-latest-sensor-data');
   },
+  startRecording: () => ipcRenderer.send('start-recording'),
+  stopRecording: () => ipcRenderer.send('stop-recording'),
+  getHistoryData: (query) => ipcRenderer.invoke('get-history-data', query),
+  clearAllData: () => ipcRenderer.invoke('clear-all-data'),
+  setDeviceUid: (path, uid) => ipcRenderer.send('set-device-uid', { path, uid }),
   restartPicoW: () => ipcRenderer.send('restart-pico-w'),
 });
 
