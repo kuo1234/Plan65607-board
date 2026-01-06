@@ -4,7 +4,6 @@ import { release } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, exec } from "child_process";
-import fs from "fs"; // 新增 fs 模組
 import path from "path";
 import { SerialPort } from "serialport"; // 新增 Serial Port 支援
 import { ReadlineParser } from '@serialport/parser-readline'; // 用來解析 Serial 資料
@@ -501,11 +500,12 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
     scrcpyPath,
     [
       "-s", deviceIP,
-      "--video-bit-rate", "4M", // USB 連接可適當提高比特率
-      "--max-fps", "15",
+      "--video-bit-rate", "8M", // 提高比特率以改善畫質
+      "--max-fps", "30", // 增加 FPS 到 30 (原 15 可能導致視覺上的閃爍/卡頓)
       "--no-audio",
-      "--video-codec=h264", // 增加 h264 編碼以減少閃爍
+      "--video-codec=h265", // 改用 h265 (HEVC)，Quest 3 支援良好且效率更高
       "--stay-awake", // 防止設備休眠導致斷線
+      "--render-driver=opengl", // 強制使用 opengl 渲染，有時可解決 Direct3D 的閃爍問題
 
       // 1) 裁切 (WxH:X:Y) —— 保留
       "--crop", "2044:1444:20:350",
