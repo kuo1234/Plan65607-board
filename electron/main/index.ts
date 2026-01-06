@@ -4,6 +4,7 @@ import { release } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, exec } from "child_process";
+import fs from "fs"; // 新增 fs 模組
 import path from "path";
 import { SerialPort } from "serialport"; // 新增 Serial Port 支援
 import { ReadlineParser } from '@serialport/parser-readline'; // 用來解析 Serial 資料
@@ -527,17 +528,35 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
     ]
   );
 
+  // 準備日誌路徑
+  const logPath = path.join(app.getPath("userData"), "scrcpy-debug.log");
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+  const logToFile = (msg: string) => {
+    const time = new Date().toISOString();
+    logStream.write(`[${time}] ${msg}\n`);
+  };
+
+  logToFile(`Starting scrcpy for ${deviceIP}`);
+
   // 監聽 stdout 和 stderr
   scrcpyProcess.stdout.on("data", (data) => {
-    console.log(`stdout: ${data}`);
+    const msg = data.toString();
+    console.log(`stdout: ${msg}`);
+    logToFile(`STDOUT: ${msg.trim()}`);
   });
 
   scrcpyProcess.stderr.on("data", (data) => {
-    console.error(`stderr: ${data}`);
+    const msg = data.toString();
+    console.error(`stderr: ${msg}`);
+    logToFile(`STDERR: ${msg.trim()}`);
   });
 
   scrcpyProcess.on("close", (code) => {
     console.log(`scrcpy 子進程退出碼：${code}`);
+    logToFile(`EXIT: scrcpy exited with code ${code}`);
+    logStream.end();
+
     // 根據退出碼決定是否成功，並通知渲染進程
     if (code !== 0) {
       event.reply("scrcpy-response", "影像投射失敗");
