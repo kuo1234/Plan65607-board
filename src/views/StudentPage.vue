@@ -139,10 +139,10 @@ const wifiConnect = async (deviceName) => {
   }
 };
 
-const startScrcpy = (deviceIP) => {
-  // 確保 deviceIP 和 devicePort 是有效的值
-  console.log(`設備 IP: ${deviceIP}`);
-  window.electronAPI.send("start-scrcpy", deviceIP);
+const startScrcpy = (deviceId) => {
+  // 這裡的 deviceId 是 adb devices 顯示的序號（USB 裝置 ID）
+  console.log(`設備 ID: ${deviceId}`);
+  window.electronAPI.send("start-scrcpy", deviceId);
 };
 
 const disconnectAllWifiDevices = () => {

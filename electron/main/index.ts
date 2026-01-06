@@ -490,7 +490,8 @@ ipcMain.on("adb-connect", (event, deviceAddress) => {
 
 let scrcpyWindowOffset = 0;
 
-ipcMain.on("start-scrcpy", (event, deviceIP) => {
+// USB-only scrcpy mirror: use ADB device ID (serial), no IP / tcpip 5555
+ipcMain.on("start-scrcpy", (event, deviceId) => {
   const x = 100 + (scrcpyWindowOffset * 50);
   const y = 100 + (scrcpyWindowOffset * 50);
   scrcpyWindowOffset = (scrcpyWindowOffset + 1) % 15;
@@ -499,13 +500,13 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
   const scrcpyProcess = spawn(
     scrcpyPath,
     [
-      "-s", deviceIP,
-      "--video-bit-rate", "8M", // 提高比特率以改善畫質
-      "--max-fps", "30", // 增加 FPS 到 30 (原 15 可能導致視覺上的閃爍/卡頓)
+      "-s", deviceId, // ADB device ID (USB serial)
+      "--video-bit-rate", "4M", // 降低比特率以減輕傳輸壓力
+      "--max-fps", "30", // 30 FPS：同時多台裝置時較穩定
       "--no-audio",
-      "--video-codec=h265", // 改用 h265 (HEVC)，Quest 3 支援良好且效率更高
-      "--stay-awake", // 防止設備休眠導致斷線
-      "--render-driver=opengl", // 強制使用 opengl 渲染，有時可解決 Direct3D 的閃爍問題
+      "--video-codec=h264", // 改回 h264，兼容性最好
+      "--stay-awake",
+      "--render-driver=software", // 改用軟體渲染，解決可能的 GPU 兼容性閃爍問題
 
       // 1) 裁切 (WxH:X:Y) —— 保留
       "--crop", "2044:1444:20:350",
@@ -513,8 +514,9 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
       // 2) GPU 端任意角度旋轉
       "--angle", "22",
     
-      // 3) 鎖定編碼最長邊 (防止動態重編碼)
-      "--max-size", "2044",
+      // 3) 鎖定編碼最長邊
+      "--max-size", "1024", // 降低解析度以提高傳輸穩定性
+
     
       // 4) 啟動時鎖定視窗大小＝裁切後尺寸
       "--window-width", "1000",
@@ -523,7 +525,7 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
       // 5) 視窗屬性（可選）
       "--window-x", x.toString(),
       "--window-y", y.toString(),
-      "--window-title", `Quest3 - ${deviceIP}`,
+      "--window-title", `Quest3 - ${deviceId}`,
       
     ]
   );
@@ -537,7 +539,7 @@ ipcMain.on("start-scrcpy", (event, deviceIP) => {
     logStream.write(`[${time}] ${msg}\n`);
   };
 
-  logToFile(`Starting scrcpy for ${deviceIP}`);
+  logToFile(`Starting scrcpy for device ${deviceId} (USB mode)`);
 
   // 監聽 stdout 和 stderr
   scrcpyProcess.stdout.on("data", (data) => {
