@@ -507,22 +507,13 @@ ipcMain.on("start-scrcpy", (event, deviceId) => {
       "--video-codec=h264", // 改回 h264，兼容性最好
       "--stay-awake",
       "--render-driver=software", // 改用軟體渲染，解決可能的 GPU 兼容性閃爍問題
+      "--max-size", "1024",
 
-      // 1) 裁切 (WxH:X:Y) —— 保留
-      "--crop", "2044:1444:20:350",
-    
-      // 2) GPU 端任意角度旋轉
-      "--angle", "22",
-    
-      // 3) 鎖定編碼最長邊
-      "--max-size", "1024", // 降低解析度以提高傳輸穩定性
-
-    
-      // 4) 啟動時鎖定視窗大小＝裁切後尺寸
+      // 啟動時鎖定視窗大小
       "--window-width", "1000",
       "--window-height", "800",
     
-      // 5) 視窗屬性（可選）
+      // 視窗屬性（可選）
       "--window-x", x.toString(),
       "--window-y", y.toString(),
       "--window-title", `Quest3 - ${deviceId}`,

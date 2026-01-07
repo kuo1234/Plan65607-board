@@ -1,5 +1,4 @@
-
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, desktopCapturer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   onPicoPortsChanged: (callback) => {
@@ -51,6 +50,12 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   setDeviceUid: (path, uid) => ipcRenderer.send('set-device-uid', { path, uid }),
   restartPicoW: () => ipcRenderer.send('restart-pico-w'),
+  // 取得指定視窗標題對應的 desktopCapturer sourceId（用來電腦端裁切 scrcpy 視窗）
+  getWindowSourceId: async (windowTitle: string) => {
+    const sources = await desktopCapturer.getSources({ types: ['window'] });
+    const target = sources.find((s: any) => s.name === windowTitle);
+    return target ? target.id : null;
+  },
 });
 
 

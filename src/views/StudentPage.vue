@@ -17,6 +17,11 @@
         <button @click="startScrcpy(device)">影像投射</button>
       </div>
       <div v-if="deviceIPs[device]">{{ deviceIPs[device] }}</div>
+
+      <!-- 電腦端裁切預覽：抓 scrcpy 視窗並在這裡裁切顯示 -->
+      <div class="preview-container">
+        <video :ref="setVideoRef(device)" autoplay muted playsinline class="scrcpy-video"></video>
+      </div>
     </div>
   </div>
 </template>
@@ -29,6 +34,12 @@ import "vue3-toastify/dist/index.css";
 
 const devices = ref([]);
 const deviceIPs = ref({});
+const videoRefs = ref({});
+
+const setVideoRef = (device) => (el) => {
+  if (!el) return;
+  videoRefs.value[device] = el;
+};
 
 const deviceIPListeners = new Map(); // 創建一個新的 Map 來存儲監聽器
 // 使用 window.electronAPI.listDevices 请求设备列表
@@ -139,10 +150,43 @@ const wifiConnect = async (deviceName) => {
   }
 };
 
-const startScrcpy = (deviceId) => {
+const startScrcpy = async (deviceId) => {
   // 這裡的 deviceId 是 adb devices 顯示的序號（USB 裝置 ID）
   console.log(`設備 ID: ${deviceId}`);
   window.electronAPI.send("start-scrcpy", deviceId);
+
+   // 稍微等待 scrcpy 視窗建立後，再從電腦端抓取並裁切
+  setTimeout(() => {
+    startDesktopCrop(deviceId);
+  }, 1000);
+};
+
+const startDesktopCrop = async (deviceId) => {
+  const videoEl = videoRefs.value[deviceId];
+  if (!videoEl) return;
+
+  const windowTitle = `Quest3 - ${deviceId}`;
+  const sourceId = await window.electronAPI.getWindowSourceId(windowTitle);
+  if (!sourceId) {
+    console.error("找不到對應的 scrcpy 視窗:", windowTitle);
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId,
+        },
+      },
+    });
+
+    videoEl.srcObject = stream;
+  } catch (err) {
+    console.error("取得桌面視窗串流失敗:", err);
+  }
 };
 
 const disconnectAllWifiDevices = () => {
@@ -246,5 +290,22 @@ const returnHome = () => {
 
 .buttons-container button:hover {
   background-color: #45a049;
+}
+
+.preview-container {
+  margin-top: 10px;
+  width: 800px;
+  height: 450px;
+  overflow: hidden;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.scrcpy-video {
+  /* 放大並只顯示中間區域，當成簡單的電腦端裁切 */
+  width: 1600px;
+  height: 450px;
+  object-fit: cover;
+  transform: translateX(-400px);
 }
 </style>
