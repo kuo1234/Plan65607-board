@@ -52,6 +52,13 @@ import { useRouter } from "vue-router";
 import { toast } from "vue3-toastify";
 import "vue3-toastify/dist/index.css";
 
+const logAndSend = (msg) => {
+  console.log(msg);
+  if (window.electronAPI && window.electronAPI.send) {
+    window.electronAPI.send('renderer-log', msg);
+  }
+};
+
 const devices = ref([]);
 const deviceIPs = ref({});
 const videoRefs = ref({});
@@ -327,33 +334,39 @@ const wifiConnect = async (deviceName) => {
 
 const startScrcpy = async (deviceId) => {
   // 這裡的 deviceId 是 adb devices 顯示的序號（USB 裝置 ID）
-  console.log(`設備 ID: ${deviceId}`);
+  logAndSend(`設備 ID: ${deviceId} - 準備啟動 scrcpy`);
   window.electronAPI.send("start-scrcpy", deviceId);
 
    // 稍微等待 scrcpy 視窗建立後，再從電腦端抓取並裁切
   setTimeout(() => {
+    logAndSend(`[startScrcpy] 延遲後啟動 desktop crop...`);
     startDesktopCrop(deviceId);
   }, 1000);
 };
 
 const startDesktopCrop = async (deviceId, retryCount = 0) => {
   const videoEl = videoRefs.value[deviceId];
-  if (!videoEl) return;
+  if (!videoEl) {
+    logAndSend(`[DesktopCrop] Error: Video Element not found for ${deviceId}`);
+    return;
+  }
 
   const windowTitle = `Quest3 - ${deviceId}`;
-  console.log(`[DesktopCrop] 嘗試尋找視窗: "${windowTitle}" (第 ${retryCount + 1} 次)`);
+  logAndSend(`[DesktopCrop] 嘗試尋找視窗: "${windowTitle}" (第 ${retryCount + 1} 次)`);
 
   const sourceId = await window.electronAPI.getWindowSourceId(windowTitle);
   if (!sourceId) {
-    console.warn(`[DesktopCrop] 找不到對應的 scrcpy 視窗: "${windowTitle}"`);
+    logAndSend(`[DesktopCrop] 找不到對應的 scrcpy 視窗: "${windowTitle}"`);
     if (retryCount < 10) {
-      console.log(`[DesktopCrop] 1秒後重試...`);
+      logAndSend(`[DesktopCrop] 1秒後重試...`);
       setTimeout(() => startDesktopCrop(deviceId, retryCount + 1), 1000);
+    } else {
+      logAndSend(`[DesktopCrop] 放棄尋找視窗。`);
     }
     return;
   }
 
-  console.log(`[DesktopCrop] 找到視窗 ID: ${sourceId}，開始捕捉串流...`);
+  logAndSend(`[DesktopCrop] 找到視窗 ID: ${sourceId}，開始捕捉串流...`);
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -366,14 +379,15 @@ const startDesktopCrop = async (deviceId, retryCount = 0) => {
       },
     });
     
-    console.log(`[DesktopCrop] 成功取得串流`, stream);
+    logAndSend(`[DesktopCrop] 成功取得串流, Video Tracks: ${stream.getVideoTracks().length}`);
     videoEl.srcObject = stream;
     videoEl.onloadedmetadata = () => {
-      console.log(`[DesktopCrop] Video Metadata Loaded: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+      logAndSend(`[DesktopCrop] Video Metadata Loaded: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
       videoEl.play();
     };
   } catch (err) {
     console.error(`[DesktopCrop] 取得桌面視窗串流失敗:`, err);
+    logAndSend(`[DesktopCrop] Exception: ${err.message}`);
   }
 };
 

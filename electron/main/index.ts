@@ -29,6 +29,10 @@ ipcMain.handle('edit-command', () => {
   });
 });
 
+ipcMain.on('renderer-log', (event, message) => {
+  console.log(`[Renderer] ${message}`);
+});
+
 const externalsPath = isDev 
   ? path.join(__dirname, "../../src/externals/") 
   : path.join(process.resourcesPath, "externals");
