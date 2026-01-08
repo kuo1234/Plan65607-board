@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, shell, ipcMain } from "electron";
+﻿import { app, BrowserWindow, shell, ipcMain, desktopCapturer } from "electron";
 import WebSocket, { WebSocketServer } from 'ws';
 import { release } from "node:os";
 import { join, dirname } from "node:path";
@@ -27,6 +27,28 @@ ipcMain.handle('edit-command', () => {
       }
     });
   });
+});
+
+ipcMain.handle('get-window-source-id', async (_, windowTitle) => {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['window'] });
+    
+    // Log available windows for debugging
+    const windowList = sources.map(s => `"${s.name}"`).join(', ');
+    console.log(`[Main] Available windows for capture: ${windowList}`);
+
+    const target = sources.find(s => s.name === windowTitle);
+    
+    if (target) {
+      return target.id;
+    } else {
+      console.warn(`[Main] Target window "${windowTitle}" not found.`);
+      return null;
+    }
+  } catch (error) {
+    console.error("[Main] Error getting desktop sources:", error);
+    return null;
+  }
 });
 
 ipcMain.on('renderer-log', (event, message) => {

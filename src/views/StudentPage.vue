@@ -40,6 +40,14 @@
             <input type="range" min="0.5" max="2.0" step="0.01" v-model="zoomScale" />
             {{ zoomScale }}
           </label>
+          <label>移動X: 
+            <input type="range" min="0.0" max="1.0" step="0.01" v-model="centerX" />
+            {{ centerX }}
+          </label>
+          <label>移動Y: 
+            <input type="range" min="0.0" max="1.0" step="0.01" v-model="centerY" />
+            {{ centerY }}
+          </label>
         </div>
       </div>
     </div>
@@ -65,6 +73,8 @@ const videoRefs = ref({});
 const canvasRefs = ref({});
 const distortionK = ref(-0.15); // 預設反畸變參數
 const zoomScale = ref(1.0);     // 預設縮放
+const centerX = ref(0.5);       // X 軸中心偏移
+const centerY = ref(0.5);       // Y 軸中心偏移
 const animationFrames = {};     // 儲存每個裝置的動畫 ID 以便清除
 
 const setVideoRef = (device) => (el) => {
@@ -103,17 +113,18 @@ const initWebGLForDevice = (device, videoEl) => {
     }
   `;
 
-  // Fragment Shader (反桶形畸變 + 單眼裁切)
+  // Fragment Shader (反桶形畸變 + 單眼裁切 + 中心偏移)
   const fsSource = `
     precision mediump float;
     uniform sampler2D u_image;
     uniform float u_k;
     uniform float u_scale;
+    uniform vec2 u_center; // 新增：畸變中心點
     varying vec2 v_texCoord;
 
     void main() {
-      // 1. 以中心 (0.5, 0.5) 為基準計算偏移
-      vec2 uv = v_texCoord - 0.5;
+      // 1. 以設定的中心點為基準計算偏移 (預設 0.5, 0.5)
+      vec2 uv = v_texCoord - u_center;
       
       // 2. 計算距離平方
       float r2 = dot(uv, uv);
@@ -122,8 +133,8 @@ const initWebGLForDevice = (device, videoEl) => {
       // 反過來我們是從平整畫面映射回扭曲紋理
       float f = 1.0 + u_k * r2;
       
-      // 4. 應用縮放與畸變修正
-      vec2 distortedUV = 0.5 + (uv * f) / u_scale;
+      // 4. 應用縮放與畸變修正，並加回中心點
+      vec2 distortedUV = u_center + (uv * f) / u_scale;
 
       // 5. 邊界檢查 (超出不渲染)
       if (distortedUV.x < 0.0 || distortedUV.x > 1.0 || distortedUV.y < 0.0 || distortedUV.y > 1.0) {
@@ -193,6 +204,7 @@ const initWebGLForDevice = (device, videoEl) => {
 
   const uKLoc = gl.getUniformLocation(program, "u_k");
   const uScaleLoc = gl.getUniformLocation(program, "u_scale");
+  const uCenterLoc = gl.getUniformLocation(program, "u_center");
 
   // 渲染迴圈
   const render = () => {
@@ -208,6 +220,7 @@ const initWebGLForDevice = (device, videoEl) => {
     // 繪製
     gl.uniform1f(uKLoc, parseFloat(distortionK.value));
     gl.uniform1f(uScaleLoc, parseFloat(zoomScale.value));
+    gl.uniform2f(uCenterLoc, parseFloat(centerX.value), parseFloat(centerY.value));
     
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
