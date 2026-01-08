@@ -336,16 +336,24 @@ const startScrcpy = async (deviceId) => {
   }, 1000);
 };
 
-const startDesktopCrop = async (deviceId) => {
+const startDesktopCrop = async (deviceId, retryCount = 0) => {
   const videoEl = videoRefs.value[deviceId];
   if (!videoEl) return;
 
   const windowTitle = `Quest3 - ${deviceId}`;
+  console.log(`[DesktopCrop] 嘗試尋找視窗: "${windowTitle}" (第 ${retryCount + 1} 次)`);
+
   const sourceId = await window.electronAPI.getWindowSourceId(windowTitle);
   if (!sourceId) {
-    console.error("找不到對應的 scrcpy 視窗:", windowTitle);
+    console.warn(`[DesktopCrop] 找不到對應的 scrcpy 視窗: "${windowTitle}"`);
+    if (retryCount < 10) {
+      console.log(`[DesktopCrop] 1秒後重試...`);
+      setTimeout(() => startDesktopCrop(deviceId, retryCount + 1), 1000);
+    }
     return;
   }
+
+  console.log(`[DesktopCrop] 找到視窗 ID: ${sourceId}，開始捕捉串流...`);
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -357,10 +365,15 @@ const startDesktopCrop = async (deviceId) => {
         },
       },
     });
-
+    
+    console.log(`[DesktopCrop] 成功取得串流`, stream);
     videoEl.srcObject = stream;
+    videoEl.onloadedmetadata = () => {
+      console.log(`[DesktopCrop] Video Metadata Loaded: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+      videoEl.play();
+    };
   } catch (err) {
-    console.error("取得桌面視窗串流失敗:", err);
+    console.error(`[DesktopCrop] 取得桌面視窗串流失敗:`, err);
   }
 };
 
@@ -479,7 +492,15 @@ const returnHome = () => {
 
 .hidden-video {
   /* 隱藏來源 video，只用來提供紋理 */
-  display: none;
+  /* display: none;  <-- 不使用 display: none，避免瀏覽器停止解碼/渲染 */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
 }
 
 .gl-canvas {
