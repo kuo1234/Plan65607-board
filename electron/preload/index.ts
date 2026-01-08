@@ -52,9 +52,17 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   restartPicoW: () => ipcRenderer.send('restart-pico-w'),
   // 取得指定視窗標題對應的 desktopCapturer sourceId（用來電腦端裁切 scrcpy 視窗）
   getWindowSourceId: async (windowTitle: string) => {
-    const sources = await desktopCapturer.getSources({ types: ['window'] });
-    const target = sources.find((s: any) => s.name === windowTitle);
-    return target ? target.id : null;
+    try {
+      const sources = await desktopCapturer.getSources({ types: ['window'] });
+      // Debug: Log all found window names to help troubleshooting
+      console.log("[Preload] Available windows:", sources.map((s: any) => s.name));
+      
+      const target = sources.find((s: any) => s.name === windowTitle);
+      return target ? target.id : null;
+    } catch (error) {
+      console.error("[Preload] Error getting sources:", error);
+      return null;
+    }
   },
 });
 
