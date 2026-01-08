@@ -18,16 +18,36 @@
       </div>
       <div v-if="deviceIPs[device]">{{ deviceIPs[device] }}</div>
 
+
       <!-- 電腦端裁切預覽：抓 scrcpy 視窗並在這裡裁切顯示 -->
       <div class="preview-container">
-        <video :ref="setVideoRef(device)" autoplay muted playsinline class="scrcpy-video"></video>
+        <!-- 來源 Video 隱藏，僅作為 WebGL 貼圖來源 -->
+        <video 
+          :ref="setVideoRef(device)" 
+          autoplay muted playsinline 
+          class="hidden-video"
+          @play="(e) => initWebGLForDevice(device, e.target)"
+        ></video>
+        <!-- WebGL Canvas 負責渲染去畸變畫面 -->
+        <canvas :ref="setCanvasRef(device)" class="gl-canvas"></canvas>
+        
+        <div class="controls">
+          <label>反畸變強度: 
+            <input type="range" min="-0.5" max="0.5" step="0.01" v-model="distortionK" />
+            {{ distortionK }}
+          </label>
+           <label>縮放: 
+            <input type="range" min="0.5" max="2.0" step="0.01" v-model="zoomScale" />
+            {{ zoomScale }}
+          </label>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue3-toastify";
 import "vue3-toastify/dist/index.css";
@@ -35,11 +55,166 @@ import "vue3-toastify/dist/index.css";
 const devices = ref([]);
 const deviceIPs = ref({});
 const videoRefs = ref({});
+const canvasRefs = ref({});
+const distortionK = ref(-0.15); // 預設反畸變參數
+const zoomScale = ref(1.0);     // 預設縮放
+const animationFrames = {};     // 儲存每個裝置的動畫 ID 以便清除
 
 const setVideoRef = (device) => (el) => {
   if (!el) return;
   videoRefs.value[device] = el;
 };
+
+const setCanvasRef = (device) => (el) => {
+  if (!el) return;
+  canvasRefs.value[device] = el;
+};
+
+// WebGL 初始化與渲染邏輯
+const initWebGLForDevice = (device, videoEl) => {
+  const canvas = canvasRefs.value[device];
+  if (!canvas || !videoEl) return;
+
+  const gl = canvas.getContext("webgl");
+  if (!gl) {
+    console.error("WebGL not supported");
+    return;
+  }
+
+  // 設定 Canvas 解析度 (可依需求調整，這裡設為 720p 保持順暢)
+  canvas.width = 1280;
+  canvas.height = 720;
+
+  // Vertex Shader
+  const vsSource = `
+    attribute vec2 a_position;
+    attribute vec2 a_texCoord;
+    varying vec2 v_texCoord;
+    void main() {
+      gl_Position = vec4(a_position, 0, 1);
+      v_texCoord = a_texCoord;
+    }
+  `;
+
+  // Fragment Shader (反桶形畸變 + 單眼裁切)
+  const fsSource = `
+    precision mediump float;
+    uniform sampler2D u_image;
+    uniform float u_k;
+    uniform float u_scale;
+    varying vec2 v_texCoord;
+
+    void main() {
+      // 1. 以中心 (0.5, 0.5) 為基準計算偏移
+      vec2 uv = v_texCoord - 0.5;
+      
+      // 2. 計算距離平方
+      float r2 = dot(uv, uv);
+      
+      // 3. 畸變公式: new_r = r * (1 + k * r^2)
+      // 反過來我們是從平整畫面映射回扭曲紋理
+      float f = 1.0 + u_k * r2;
+      
+      // 4. 應用縮放與畸變修正
+      vec2 distortedUV = 0.5 + (uv * f) / u_scale;
+
+      // 5. 邊界檢查 (超出不渲染)
+      if (distortedUV.x < 0.0 || distortedUV.x > 1.0 || distortedUV.y < 0.0 || distortedUV.y > 1.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      } else {
+        // 6. 僅取左眼 (紋理的左半部: x * 0.5)
+        // scrcpy 輸出是並排雙眼，我們只顯示左邊那隻眼睛並拉平
+        vec2 leftEyeUV = vec2(distortedUV.x * 0.5, distortedUV.y);
+        gl_FragColor = texture2D(u_image, leftEyeUV);
+      }
+    }
+  `;
+
+  // 編譯 Shader
+  const compileShader = (type, source) => {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  };
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, vsSource);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fsSource);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.useProgram(program);
+
+  // 設定頂點數據 (全螢幕 Quad)
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,  1, -1, -1,  1,
+    -1,  1,  1, -1,  1,  1,
+  ]), gl.STATIC_DRAW);
+
+  const positionLocation = gl.getAttribLocation(program, "a_position");
+  gl.enableVertexAttribArray(positionLocation);
+  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+  const texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  // WebGL 紋理坐標 (0,0) 在左下，影像通常左上，這裏視訊紋理通常不需要翻轉，直接 mapping
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    0, 1,  1, 1,  0, 0,
+    0, 0,  1, 1,  1, 0,
+  ]), gl.STATIC_DRAW);
+
+  const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+  gl.enableVertexAttribArray(texCoordLocation);
+  gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+  // 建立紋理
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  // 設置紋理參數 (視訊串流需要 CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const uKLoc = gl.getUniformLocation(program, "u_k");
+  const uScaleLoc = gl.getUniformLocation(program, "u_scale");
+
+  // 渲染迴圈
+  const render = () => {
+    if (!videoEl || videoEl.paused || videoEl.ended) {
+       animationFrames[device] = requestAnimationFrame(render);
+       return;
+    }
+
+    // 更新紋理
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
+
+    // 繪製
+    gl.uniform1f(uKLoc, parseFloat(distortionK.value));
+    gl.uniform1f(uScaleLoc, parseFloat(zoomScale.value));
+    
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    animationFrames[device] = requestAnimationFrame(render);
+  };
+
+  render();
+};
+
+onUnmounted(() => {
+  // 清理動畫 Loop
+  Object.values(animationFrames).forEach(id => cancelAnimationFrame(id));
+});
 
 const deviceIPListeners = new Map(); // 創建一個新的 Map 來存儲監聽器
 // 使用 window.electronAPI.listDevices 请求设备列表
@@ -294,18 +469,34 @@ const returnHome = () => {
 
 .preview-container {
   margin-top: 10px;
-  width: 800px;
-  height: 450px;
-  overflow: hidden;
+  width: 1280px;  /* 與 Canvas 解析度一致，可隨意調整 */
+  height: 720px;
   border: 1px solid #ccc;
   border-radius: 8px;
+  background: #000;
+  position: relative;
 }
 
-.scrcpy-video {
-  /* 放大並只顯示中間區域，當成簡單的電腦端裁切 */
-  width: 1600px;
-  height: 450px;
-  object-fit: cover;
-  transform: translateX(-400px);
+.hidden-video {
+  /* 隱藏來源 video，只用來提供紋理 */
+  display: none;
+}
+
+.gl-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  padding: 10px;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
 }
 </style>
