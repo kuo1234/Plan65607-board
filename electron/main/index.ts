@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, shell, ipcMain } from "electron";
+﻿import { app, BrowserWindow, shell, ipcMain, desktopCapturer } from "electron";
 import WebSocket, { WebSocketServer } from 'ws';
 import { release } from "node:os";
 import { join, dirname } from "node:path";
@@ -29,6 +29,32 @@ ipcMain.handle('edit-command', () => {
   });
 });
 
+ipcMain.handle('get-window-source-id', async (_, windowTitle) => {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['window'] });
+    
+    // Log available windows for debugging
+    const windowList = sources.map(s => `"${s.name}"`).join(', ');
+    console.log(`[Main] Available windows for capture: ${windowList}`);
+
+    const target = sources.find(s => s.name === windowTitle);
+    
+    if (target) {
+      return target.id;
+    } else {
+      console.warn(`[Main] Target window "${windowTitle}" not found.`);
+      return null;
+    }
+  } catch (error) {
+    console.error("[Main] Error getting desktop sources:", error);
+    return null;
+  }
+});
+
+ipcMain.on('renderer-log', (event, message) => {
+  console.log(`[Renderer] ${message}`);
+});
+
 const externalsPath = isDev 
   ? path.join(__dirname, "../../src/externals/") 
   : path.join(process.resourcesPath, "externals");
@@ -56,10 +82,75 @@ const url = process.env.VITE_DEV_SERVER_URL;
 const indexHtml = join(process.env.DIST, "index.html");
 const devices: Map<string, DeviceConnection> = new Map();
 
-// MongoDB setup
-mongoose.connect('mongodb://127.0.0.1:27017/plan65607')
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('Could not connect to MongoDB', err));
+type DbConfig = {
+  ip: string;
+  username: string;
+  password: string;
+};
+
+const DEFAULT_DB_CONFIG: DbConfig = {
+  ip: '192.168.50.72',
+  username: 'root',
+  password: 'uscc65607',
+};
+
+let dbConfig: DbConfig = { ...DEFAULT_DB_CONFIG };
+let examDbConn: mongoose.Connection | null = null;
+
+const getDbConfigPath = () => join(app.getPath('userData'), 'db-config.json');
+
+const buildMongoUri = (databaseName: string) => {
+  const encodedUser = encodeURIComponent(dbConfig.username);
+  const encodedPass = encodeURIComponent(dbConfig.password);
+  return `mongodb://${encodedUser}:${encodedPass}@${dbConfig.ip}:27017/${databaseName}?authSource=admin&directConnection=true`;
+};
+
+const loadDbConfig = () => {
+  try {
+    const filePath = getDbConfigPath();
+    if (!fs.existsSync(filePath)) {
+      dbConfig = { ...DEFAULT_DB_CONFIG };
+      return;
+    }
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    dbConfig = {
+      ip: parsed.ip || DEFAULT_DB_CONFIG.ip,
+      username: parsed.username || DEFAULT_DB_CONFIG.username,
+      password: parsed.password || DEFAULT_DB_CONFIG.password,
+    };
+  } catch (err) {
+    console.error('Failed to load db config, fallback to default:', err);
+    dbConfig = { ...DEFAULT_DB_CONFIG };
+  }
+};
+
+const saveDbConfigToDisk = (nextConfig: DbConfig) => {
+  const filePath = getDbConfigPath();
+  fs.writeFileSync(filePath, JSON.stringify(nextConfig, null, 2), 'utf-8');
+};
+
+const connectDatabases = async () => {
+  try {
+    await mongoose.disconnect();
+  } catch {}
+
+  try {
+    if (examDbConn) await examDbConn.close();
+  } catch {}
+
+  await mongoose.connect(buildMongoUri('plan65607'));
+  console.log('Connected to MongoDB (plan65607) with config ip:', dbConfig.ip);
+
+  examDbConn = await mongoose.createConnection(buildMongoUri('technical_order_editor_db')).asPromise();
+  examDbConn.on('error', (err) => console.error('Could not connect to MongoDB (technical_order_editor_db)', err));
+  console.log('Connected to MongoDB (technical_order_editor_db) with config ip:', dbConfig.ip);
+};
+
+loadDbConfig();
+connectDatabases().catch((err) => {
+  console.error('Initial MongoDB connect failed:', err);
+});
 
 const SensorDataSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
@@ -68,6 +159,12 @@ const SensorDataSchema = new mongoose.Schema({
 });
 
 const SensorData = mongoose.model('SensorData', SensorDataSchema);
+const ExamStudentSchema = new mongoose.Schema({}, { strict: false });
+
+const getExamStudentModel = () => {
+  if (!examDbConn) throw new Error('Exam DB connection is not ready');
+  return examDbConn.model('ExamStudent', ExamStudentSchema, 'student');
+};
 
 let isRecording = false;
 let recordBuffer: any[] = [];
@@ -118,12 +215,35 @@ ipcMain.handle('get-history-data', async (_, { uid, startTime, endTime }) => {
       if (endTime) query.timestamp.$lte = new Date(endTime);
     }
     
-    // Limit to 5000 points to prevent UI freeze, or implement downsampling
+    console.log('[get-history-data] Query:', JSON.stringify(query));
     const results = await SensorData.find(query).sort({ timestamp: 1 }).lean();
+    console.log(`[get-history-data] Found ${results.length} records`);
     return results;
   } catch (err) {
     console.error('Error fetching history:', err);
     return [];
+  }
+});
+
+ipcMain.handle('get-student-list', async () => {
+  try {
+    const students = await SensorData.distinct("uid");
+    return students;
+  } catch (err) {
+    console.error('Error fetching student list:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('delete-student-data', async (_, uid) => {
+  try {
+    if (!uid) return false;
+    const result = await SensorData.deleteMany({ uid: uid });
+    console.log(`Deleted ${result.deletedCount} records for student ${uid}`);
+    return true;
+  } catch (err) {
+    console.error('Error deleting student data:', err);
+    return false;
   }
 });
 
@@ -135,6 +255,62 @@ ipcMain.handle('clear-all-data', async () => {
   } catch (err) {
     console.error('Error clearing data:', err);
     return false;
+  }
+});
+
+ipcMain.handle('get-db-config', async () => {
+  return {
+    ip: dbConfig.ip,
+    username: dbConfig.username,
+    password: dbConfig.password,
+  };
+});
+
+ipcMain.handle('save-db-config', async (_, nextConfig: DbConfig) => {
+  try {
+    const cleanConfig: DbConfig = {
+      ip: String(nextConfig?.ip || '').trim(),
+      username: String(nextConfig?.username || '').trim(),
+      password: String(nextConfig?.password || ''),
+    };
+
+    if (!cleanConfig.ip || !cleanConfig.username || !cleanConfig.password) {
+      return { success: false, message: 'IP、帳號、密碼不可為空' };
+    }
+
+    dbConfig = cleanConfig;
+    saveDbConfigToDisk(cleanConfig);
+    await connectDatabases();
+    return { success: true, message: '資料庫設定已儲存並重新連線成功' };
+  } catch (err: any) {
+    console.error('Failed to save/reconnect db config:', err);
+    return { success: false, message: `重新連線失敗: ${err?.message || err}` };
+  }
+});
+
+// --- Exam DB IPC handlers ---
+
+// 取得所有考試學員列表（student_number）
+ipcMain.handle('get-exam-student-list', async () => {
+  try {
+    const ExamStudent = getExamStudentModel();
+    const students = await ExamStudent.find({}, { student_number: 1, _id: 0 }).lean();
+    return students.map((s: any) => s.student_number);
+  } catch (err) {
+    console.error('Error fetching exam student list:', err);
+    return [];
+  }
+});
+
+// 依 student_number 取得考試學員資料
+ipcMain.handle('get-exam-student-data', async (_, studentNumber: string) => {
+  try {
+    const ExamStudent = getExamStudentModel();
+    const student = await ExamStudent.findOne({ student_number: studentNumber }).lean();
+    return student || null;
+  } catch (err) {
+    console.error('Error fetching exam student data:', err);
+    return null;
   }
 });
 
@@ -507,22 +683,17 @@ ipcMain.on("start-scrcpy", (event, deviceId) => {
       "--video-codec=h264", // 改回 h264，兼容性最好
       "--stay-awake",
       "--render-driver=software", // 改用軟體渲染，解決可能的 GPU 兼容性閃爍問題
-
-      // 1) 裁切 (WxH:X:Y) —— 保留
+      "--max-size", "1024",
       "--crop", "2044:1444:20:350",
     
       // 2) GPU 端任意角度旋轉
       "--angle", "22",
-    
-      // 3) 鎖定編碼最長邊
-      "--max-size", "1024", // 降低解析度以提高傳輸穩定性
-
-    
-      // 4) 啟動時鎖定視窗大小＝裁切後尺寸
+      
+      // 啟動時鎖定視窗大小
       "--window-width", "1000",
       "--window-height", "800",
     
-      // 5) 視窗屬性（可選）
+      // 視窗屬性（可選）
       "--window-x", x.toString(),
       "--window-y", y.toString(),
       "--window-title", `Quest3 - ${deviceId}`,

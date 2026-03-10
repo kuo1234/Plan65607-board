@@ -3,6 +3,8 @@ import HelloWorld from '../src/components/HelloWorld.vue';
 import StudentPage from '../src/views/StudentPage.vue';
 import BiosignalPage from '../src/views/BiosignalPage.vue';
 import HistoryPage from '../src/views/HistoryPage.vue';
+import ExamHistoryPage from '../src/views/ExamHistoryPage.vue';
+import SettingsPage from '../src/views/SettingsPage.vue';
 
 const routes = [
   {
@@ -24,6 +26,16 @@ const routes = [
     path: '/history-page',
     name: 'HistoryPage',
     component: HistoryPage,
+  },
+  {
+    path: '/exam-history',
+    name: 'ExamHistory',
+    component: ExamHistoryPage,
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: SettingsPage,
   },
 ];
 

@@ -48,9 +48,17 @@ editCommand: () => ipcRenderer.invoke('edit-command'),
   startRecording: () => ipcRenderer.send('start-recording'),
   stopRecording: () => ipcRenderer.send('stop-recording'),
   getHistoryData: (query) => ipcRenderer.invoke('get-history-data', query),
+  getStudentList: () => ipcRenderer.invoke('get-student-list'),
+  deleteStudentData: (uid) => ipcRenderer.invoke('delete-student-data', uid),
   clearAllData: () => ipcRenderer.invoke('clear-all-data'),
   setDeviceUid: (path, uid) => ipcRenderer.send('set-device-uid', { path, uid }),
   restartPicoW: () => ipcRenderer.send('restart-pico-w'),
+  // Exam DB APIs
+  getExamStudentList: () => ipcRenderer.invoke('get-exam-student-list'),
+  getExamStudentData: (studentNumber) => ipcRenderer.invoke('get-exam-student-data', studentNumber),
+  // DB config APIs
+  getDbConfig: () => ipcRenderer.invoke('get-db-config'),
+  saveDbConfig: (config) => ipcRenderer.invoke('save-db-config', config),
 });
 
 

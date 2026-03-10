@@ -3,20 +3,6 @@ import { toast } from 'vue3-toastify';
 import 'vue3-toastify/dist/index.css';
 import { useRouter } from 'vue-router';
 
-import { exec } from 'child_process';
-import { ipcRenderer } from 'electron';
-
-interface ElectronAPI {
-  editCommand: () => Promise<string>;
-  on: (channel: string, func: (...args: any[]) => void) => void;
-}
-
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI;
-  }
-}
-
 const router = useRouter();
 
 const notify = () => {
@@ -26,7 +12,7 @@ const notify = () => {
 
     const editCommand = async () => {
   try {
-    const message = await window.electronAPI.editCommand();
+    const message = await window.electronAPI.invoke('edit-command');
     toast(message, { type: 'success' });
   } catch (error) {
     let errorMessage = 'An unknown error occurred';
@@ -55,6 +41,14 @@ const viewStudent = () => {
   router.push('/student-page'); 
 }
 
+const viewExamHistory = () => {
+  router.push('/exam-history');
+}
+
+const viewSettings = () => {
+  router.push('/settings');
+}
+
 </script>
 
 
@@ -64,12 +58,13 @@ const viewStudent = () => {
 
 <template>
   <div class="button-grid">
+    <button class="settings-mini-btn" @click="viewSettings">設定</button>
     <div class="button-row">
       <button @click="editCommand">技令編輯</button>
       <button @click="viewBiosignals">生理訊號</button>
     </div>
     <div class="button-row">
-      <button @click="viewSignals">教學統計與列印</button>
+      <button @click="viewExamHistory">作答生理分析</button>
       <button @click="viewStudent">學員畫面</button>
     </div>
   </div>
@@ -78,6 +73,7 @@ const viewStudent = () => {
 <style scoped>
 
 .button-grid {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -86,6 +82,18 @@ const viewStudent = () => {
   background-size: cover; 
   min-height: 90vh;
   min-width: 120vh; 
+}
+
+.settings-mini-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: auto;
+  height: auto;
+  padding: 8px 14px;
+  font-size: 14px;
+  background-color: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 

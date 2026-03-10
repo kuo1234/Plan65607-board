@@ -3,31 +3,93 @@
     <div class="controls">
       <button @click="$router.push('/')">返回首頁</button>
       
-      <label>
-        學員 ID (UID):
-        <input v-model="searchUid" placeholder="例如: S001" />
-      </label>
-
-      <label>
-        開始時間:
-        <input type="datetime-local" v-model="startTime" />
-      </label>
-
-      <label>
-        結束時間:
-        <input type="datetime-local" v-model="endTime" />
-      </label>
-
-      <button @click="fetchData" :disabled="loading">
-        {{ loading ? '載入中...' : '查詢資料' }}
+      <!-- Toggle Mock/Real -->
+      <button @click="toggleDemoMode" :class="{ 'active-mode': isMockData }">
+        {{ isMockData ? '切換回真實資料' : '切換至演示模式 (Mock Data)' }}
       </button>
 
-      <button @click="clearData" class="danger-btn" :disabled="loading">
-        清除所有資料
+       <button @click="clearData" class="danger-btn" :disabled="loading">
+        清除所有資料 (DB)
       </button>
     </div>
 
+    <!-- Student Selection Area -->
+    <div class="section-panel">
+      <div class="panel-header">
+        <h3>1. 選擇學員 ({{ isMockData ? '演示資料' : '資料庫紀錄' }})</h3>
+        <input 
+            v-if="availableStudents.length > 0"
+            v-model="searchStudentKeyword" 
+            placeholder="搜尋學員 ID 或 姓名..." 
+            class="search-input"
+        />
+      </div>
+
+      <div v-if="filteredStudents.length === 0" class="no-data-text">
+        {{ loading ? '載入中...' : (availableStudents.length === 0 ? '無學員資料' : '找不到相符學員') }}
+      </div>
+      <div class="student-grid" v-else>
+        <div 
+          v-for="student in filteredStudents" 
+          :key="student.uid || student"
+          class="student-card"
+          :class="{ active: searchUid === (student.uid || student) }"
+          @click="selectStudent(student)"
+        >
+          <div class="avatar">👤</div>
+          <div class="info">
+            <div class="name">{{ student.name || '學員' }}</div>
+            <div class="uid">{{ student.uid || student }}</div>
+          </div>
+          <button 
+                class="delete-icon" 
+                v-if="!isMockData"
+                title="刪除該學員資料"
+                @click="deleteStudent(student, $event)"
+              >
+            🗑️
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Question/Time Selection Area -->
+    <div class="section-panel" v-if="searchUid">
+      <h3>
+        2. 選擇作答紀錄 
+        <span v-if="!isMockData" style="font-size:0.8em; font-weight:normal;">(真實資料暫無題目紀錄，請手動選擇時間)</span>
+      </h3>
+      
+      <!-- For Mock Data: Show Questions -->
+      <div v-if="questionList.length > 0" class="questions-grid">
+        <div 
+          v-for="q in questionList" 
+          :key="q.questionId"
+          class="question-card"
+          :class="{ active: selectedQuestion && selectedQuestion.questionId === q.questionId }"
+          @click="selectQuestion(q)"
+        >
+          <h4>第 {{ q.questionId }} 題</h4>
+          <p class="time-range">{{ formatTime(q.startTime) }} - {{ formatTime(q.endTime) }}</p>
+        </div>
+      </div>
+      
+      <!-- Manual Time Picker (Always available but secondary for Mock) -->
+      <div class="manual-controls" :class="{ 'disabled': loading }">
+         <label>
+            開始: <input type="datetime-local" v-model="startTime" />
+         </label>
+         <label>
+            結束: <input type="datetime-local" v-model="endTime" />
+         </label>
+         <button @click="fetchData" :disabled="loading || !startTime || !endTime">
+            查詢區間
+         </button>
+      </div>
+    </div>
+
     <div v-if="error" class="error">{{ error }}</div>
+    
 
     <div class="charts-area" v-if="dataPoints.length > 0">
       <h3>查詢結果: {{ dataPoints.length }} 筆資料</h3>
@@ -64,7 +126,8 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted, computed } from 'vue';
+import { mockQuestions, generateMockSensorData, mockStudents } from '../data/mockData';
 
 const searchUid = ref('');
 const startTime = ref('');
@@ -73,6 +136,146 @@ const loading = ref(false);
 const error = ref('');
 const searched = ref(false);
 const dataPoints = ref([]);
+
+// State for Student Selection
+const availableStudents = ref([]); // List of UIDs or objects
+const isMockData = ref(false); // Whether current student list is mock
+const searchStudentKeyword = ref(''); // Added for filtering
+
+// Demo Mode State
+const questionList = ref([]);
+const selectedQuestion = ref(null);
+const selectedStudent = ref(null);
+
+const filteredStudents = computed(() => {
+    if (!searchStudentKeyword.value) return availableStudents.value;
+    const lowerKey = searchStudentKeyword.value.toLowerCase();
+    
+    return availableStudents.value.filter(s => {
+        if (typeof s === 'string') {
+            return s.toLowerCase().includes(lowerKey); // Real data usually just string UID
+        } else {
+            // Mock object {uid, name}
+             return (s.uid && s.uid.toLowerCase().includes(lowerKey)) || 
+                    (s.name && s.name.toLowerCase().includes(lowerKey));
+        }
+    });
+});
+
+const deleteStudent = async (student, event) => {
+    event.stopPropagation(); // Prevent card selection
+    
+    if (isMockData.value) {
+        alert("Mock data cannot be deleted.");
+        return;
+    }
+
+    const uid = student.uid || student;
+    if (!confirm(`確定要刪除學員 ${uid} 的所有資料嗎？此動作無法復原！`)) return;
+
+    loading.value = true;
+    try {
+        const success = await window.electronAPI.deleteStudentData(uid);
+        if (success) {
+            alert(`學員 ${uid} 資料已刪除`);
+            if (searchUid.value === uid) {
+               resetSelection();
+            }
+            await loadRealStudents();
+        } else {
+            alert('刪除失敗');
+        }
+    } catch (e) {
+        alert('刪除時發生錯誤: ' + e.message);
+    } finally {
+        loading.value = false;
+    }
+};
+
+onMounted(async () => {
+    await loadRealStudents();
+});
+
+const loadRealStudents = async () => {
+    loading.value = true;
+    try {
+        const list = await window.electronAPI.getStudentList();
+        availableStudents.value = list || [];
+        isMockData.value = false;
+    } catch (e) {
+        console.error("Failed to load students", e);
+    } finally {
+        loading.value = false;
+    }
+}
+
+const toggleDemoMode = () => {
+    isMockData.value = !isMockData.value;
+    resetSelection();
+    
+    if (isMockData.value) {
+        availableStudents.value = mockStudents;
+    } else {
+        loadRealStudents();
+    }
+};
+
+const resetSelection = () => {
+    searchUid.value = '';
+    startTime.value = '';
+    endTime.value = '';
+    questionList.value = [];
+    selectedQuestion.value = null;
+    selectedStudent.value = null;
+    dataPoints.value = [];
+    searched.value = false;
+    clearChartData();
+}
+
+const selectStudent = (student) => {
+    const uid = student.uid || student;
+    searchUid.value = uid;
+    selectedStudent.value = student;
+    selectedQuestion.value = null;
+    
+    clearChartData();
+    dataPoints.value = [];
+
+    if (isMockData.value) {
+        questionList.value = mockQuestions.filter(q => q.uid === uid);
+    } else {
+        questionList.value = [];
+    }
+};
+
+const formatTime = (iso) => {
+    const d = new Date(iso);
+    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+}
+
+const formatForInput = (isoString) => {
+    const d = new Date(isoString);
+    const pad = (n) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
+const selectQuestion = (q) => {
+  selectedQuestion.value = q;
+  startTime.value = formatForInput(q.startTime);
+  endTime.value = formatForInput(q.endTime);
+  fetchData();
+};
+
+const clearChartData = () => {
+  ecgOptions.data[0].dataPoints = [];
+  emgOptions.data[0].dataPoints = [];
+  gsrOptions.data[0].dataPoints = [];
+  tempOptions.data[0].dataPoints = [];
+  tempOptions.data[1].dataPoints = [];
+  tempOptions.data[2].dataPoints = [];
+  hrOptions.data[0].dataPoints = [];
+  hrOptions.data[1].dataPoints = [];
+}
 
 // Thresholds (copied from BiosignalPage for consistency)
 const TH = {
@@ -180,22 +383,24 @@ const fetchData = async () => {
   searched.value = true;
   dataPoints.value = [];
   
-  // Clear charts
-  ecgOptions.data[0].dataPoints = [];
-  emgOptions.data[0].dataPoints = [];
-  gsrOptions.data[0].dataPoints = [];
-  tempOptions.data[0].dataPoints = []; // Env
-  tempOptions.data[1].dataPoints = []; // Body
-  tempOptions.data[2].dataPoints = []; // Humidity
-  hrOptions.data[0].dataPoints = []; // HR
-  hrOptions.data[1].dataPoints = []; // SpO2
+  clearChartData();
 
   try {
-    const results = await window.electronAPI.getHistoryData({
-      uid: searchUid.value || undefined,
-      startTime: startTime.value ? new Date(startTime.value).toISOString() : undefined,
-      endTime: endTime.value ? new Date(endTime.value).toISOString() : undefined
-    });
+    let results;
+    if (isMockData.value && searchUid.value) {
+       // Demo Data Generation
+       const s = startTime.value ? new Date(startTime.value).toISOString() : new Date().toISOString();
+       const e = endTime.value ? new Date(endTime.value).toISOString() : new Date().toISOString();
+       results = generateMockSensorData(s, e, searchUid.value);
+       // Fake network delay
+       await new Promise(resolve => setTimeout(resolve, 300));
+    } else {
+      results = await window.electronAPI.getHistoryData({
+        uid: searchUid.value || undefined,
+        startTime: startTime.value ? new Date(startTime.value).toISOString() : undefined,
+        endTime: endTime.value ? new Date(endTime.value).toISOString() : undefined
+      });
+    }
 
     dataPoints.value = results;
 
@@ -357,4 +562,139 @@ const clearData = async () => {
 }
 .error { color: red; margin: 10px 0; }
 .no-data { color: #666; font-style: italic; }
+
+/* Student Selection Panel */
+.section-panel {
+  margin-bottom: 25px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  border: 1px solid #eee;
+}
+.section-panel h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 10px;
+  color: #333;
+}
+
+.student-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 10px;
+}
+.panel-header h3 {
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+.search-input {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 200px;
+}
+
+.student-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #f9f9f9;
+}
+.student-card:hover {
+  border-color: #2196F3;
+  background: #e3f2fd;
+  transform: translateY(-2px);
+}
+.student-card.active {
+  border-color: #2196F3;
+  background: #2196F3;
+  color: white;
+}
+.delete-icon {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+  font-size: 1.2em;
+  padding: 0;
+}
+.student-card:hover .delete-icon {
+  opacity: 1;
+}
+.delete-icon:hover {
+  transform: scale(1.2);
+}
+.student-card .avatar {
+  font-size: 24px;
+  background: #fff;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.student-card.active .avatar {
+  background: rgba(255,255,255,0.2);
+}
+.student-card .name {
+  font-weight: bold;
+}
+.student-card .uid {
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+/* Question Grid (inherited/modified) */
+.questions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 15px;
+}
+.question-card.active {
+  background-color: #e3f2fd;
+  border-color: #1976D2;
+}
+
+/* Toggle Button */
+.active-mode {
+  background-color: #4CAF50 !important;
+  color: white;
+}
+
+.manual-controls {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px dashed #ccc;
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+}
+.manual-controls.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
 </style>

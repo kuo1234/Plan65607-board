@@ -7,7 +7,7 @@
       <button @click="toggleRecording" :class="{ recording: isRecording }">
         {{ isRecording ? '停止紀錄' : '開始紀錄' }}
       </button>
-      <button @click="$router.push('/history-page')">歷史資料查詢</button>
+      <!-- <button @click="$router.push('/history-page')">歷史資料查詢</button> -->
     </div>
 
     <!-- 學員欄（水平排列） -->
