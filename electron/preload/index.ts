@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('pico-ports-changed', (event, portPaths) => callback(portPaths));
   },
 editCommand: () => ipcRenderer.invoke('edit-command'),
+  invoke: (channel, data) => ipcRenderer.invoke(channel, data),
   send: (channel, data) => {
     ipcRenderer.send(channel, data);
   },
