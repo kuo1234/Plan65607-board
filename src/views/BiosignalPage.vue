@@ -7,7 +7,70 @@
       <button @click="toggleRecording" :class="{ recording: isRecording }">
         {{ isRecording ? '停止紀錄' : '開始紀錄' }}
       </button>
+      <button @click="toggleThresholdSettings">
+        {{ showThresholdSettings ? '收合門檻設定' : '門檻設定' }}
+      </button>
       <!-- <button @click="$router.push('/history-page')">歷史資料查詢</button> -->
+    </div>
+
+    <div ref="thresholdSettingsPanelRef" class="threshold-settings-panel" v-if="showThresholdSettings">
+      <div class="threshold-settings-header">
+        <div>
+          <h3>生理訊號門檻設定</h3>
+          <p>修改後會立即套用到狀態燈與圖表，並儲存在這台電腦。</p>
+        </div>
+        <div class="threshold-settings-actions">
+          <button class="save-settings-btn" @click="saveThresholdSettings">套用並儲存</button>
+          <button class="reset-settings-btn" @click="resetThresholdSettings">還原預設</button>
+        </div>
+      </div>
+
+      <p v-if="thresholdSaveMessage" class="threshold-save-message">{{ thresholdSaveMessage }}</p>
+
+      <div class="threshold-settings-grid">
+        <div
+          v-for="section in thresholdFieldGroups"
+          :key="section.key"
+          class="threshold-settings-card"
+        >
+          <h4>{{ section.label }}</h4>
+          <p v-if="section.description" class="threshold-card-description">
+            {{ section.description }}
+          </p>
+          <label
+            v-for="field in section.fields"
+            :key="`${section.key}-${field.key}`"
+            class="threshold-input"
+          >
+            <span>{{ field.label }}</span>
+            <input
+              v-model.number="thresholdSettings[section.key][field.key]"
+              type="number"
+              :step="field.step || 'any'"
+              @change="onThresholdFieldChange"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-legend">
+      <span class="legend-item">
+        <span class="legend-dot normal"></span>
+        綠色正常
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot low"></span>
+        黃色過低
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot high"></span>
+        紅色過高
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot hold"></span>
+        灰色暫停/異常
+      </span>
     </div>
 
     <!-- 學員欄（水平排列） -->
@@ -25,10 +88,10 @@
 
         <!-- 狀態指示 -->
         <div class="status-list">
-          <span v-for="group in sensorCharts" :key="group.label">
+          <span v-for="(group, groupKey) in sensorCharts" :key="groupKey">
             <span
               v-for="item in group.statusList"
-              :key="item.label"
+              :key="`${groupKey}-${item.label}-${item.status}`"
               :class="['status-indicator', item.status]"
               :title="item.tooltip || ''"
             >
@@ -162,13 +225,18 @@ const deviceLabelMap = reactive({});
 const studentUids = reactive({});
 let deviceCount = ref(0);
 const charts = reactive({});
+const thresholdSettingsPanelRef = ref(null);
+const showThresholdSettings = ref(false);
+const thresholdSaveMessage = ref("");
+let thresholdSaveMessageTimer = null;
 
 function updateUid(path) {
   window.electronAPI.setDeviceUid(path, studentUids[path]);
 }
 
-// ===== 狀態範圍（可依需求調整）=====
-const TH = {
+const THRESHOLD_STORAGE_KEY = "biosignal-threshold-settings";
+
+const createDefaultThresholds = () => ({
   ecg_quality: { rms_low: 150, rms_high: 8000, clip_ratio_high: 0.02 }, // 供狀態燈參考
   emg_env: { low: 20, high: 1200 }, // EMG 包絡（ADC）映射 0~100% 的預設範圍（未校準時用）
   emg_activation: { on: 120, off: 90, debounce_ms: 200 }, // 遲滯 + 去抖
@@ -178,7 +246,88 @@ const TH = {
   humidity: { low: 30, high: 70 },
   hr: { low: 60, high: 100 },
   spo2: { low: 90, normal: 95 },
-};
+});
+
+const thresholdSettings = reactive(createDefaultThresholds());
+const thresholdFieldGroups = [
+  {
+    key: "ecg_quality",
+    label: "ECG 品質",
+    fields: [
+      { key: "rms_low", label: "RMS 低門檻", step: 1 },
+      { key: "rms_high", label: "RMS 高門檻", step: 1 },
+      { key: "clip_ratio_high", label: "Clip Ratio 高門檻", step: 0.001 },
+    ],
+  },
+  {
+    key: "emg_env",
+    label: "EMG 包絡",
+    description: "把肌電原始訊號做平滑後的強度範圍，用來判斷 EMG 過低、正常或過高。",
+    fields: [
+      { key: "low", label: "Low", step: 1 },
+      { key: "high", label: "High", step: 1 },
+    ],
+  },
+  {
+    key: "emg_activation",
+    label: "EMG 啟動判定",
+    description: "用來判斷肌肉是否進入 ACTIVE 狀態。超過啟動門檻會變 ACTIVE，低於解除門檻才會回到 IDLE。",
+    fields: [
+      { key: "on", label: "啟動門檻", step: 1 },
+      { key: "off", label: "解除門檻", step: 1 },
+      { key: "debounce_ms", label: "去抖時間 ms", step: 10 },
+    ],
+  },
+  {
+    key: "gsr_uS",
+    label: "GSR (µS)",
+    fields: [
+      { key: "low", label: "Low", step: 0.1 },
+      { key: "high", label: "High", step: 0.1 },
+    ],
+  },
+  {
+    key: "body_temp",
+    label: "體溫 (°C)",
+    fields: [
+      { key: "low", label: "Low", step: 0.1 },
+      { key: "high", label: "High", step: 0.1 },
+      { key: "fever", label: "發燒線", step: 0.1 },
+    ],
+  },
+  {
+    key: "env_temp",
+    label: "環境溫度 (°C)",
+    fields: [
+      { key: "low", label: "Low", step: 0.1 },
+      { key: "high", label: "High", step: 0.1 },
+    ],
+  },
+  {
+    key: "humidity",
+    label: "濕度 (%)",
+    fields: [
+      { key: "low", label: "Low", step: 1 },
+      { key: "high", label: "High", step: 1 },
+    ],
+  },
+  {
+    key: "hr",
+    label: "心率 (bpm)",
+    fields: [
+      { key: "low", label: "Low", step: 1 },
+      { key: "high", label: "High", step: 1 },
+    ],
+  },
+  {
+    key: "spo2",
+    label: "SpO2 (%)",
+    fields: [
+      { key: "low", label: "缺氧線", step: 1 },
+      { key: "normal", label: "正常線", step: 1 },
+    ],
+  },
+];
 
 const styleOptions = reactive({ width: "100%", height: "360px" });
 const chartHeight = ref("360px");
@@ -193,6 +342,250 @@ function cssSizeVar(name, fallback) {
 let chartTitleFontSize = cssSizeVar("--title-size", 26);
 let labelFontSize = cssSizeVar("--label-size", 14);
 let labelTitleFontSize = cssSizeVar("--label-title-size", 14);
+
+function toFiniteNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeThresholds(source) {
+  source.ecg_quality.rms_low = Math.max(0, toFiniteNumber(source.ecg_quality.rms_low, 150));
+  source.ecg_quality.rms_high = Math.max(
+    source.ecg_quality.rms_low,
+    toFiniteNumber(source.ecg_quality.rms_high, 8000)
+  );
+  source.ecg_quality.clip_ratio_high = Math.max(
+    0,
+    toFiniteNumber(source.ecg_quality.clip_ratio_high, 0.02)
+  );
+
+  source.emg_env.low = Math.max(0, toFiniteNumber(source.emg_env.low, 20));
+  source.emg_env.high = Math.max(source.emg_env.low, toFiniteNumber(source.emg_env.high, 1200));
+
+  source.emg_activation.off = Math.max(0, toFiniteNumber(source.emg_activation.off, 90));
+  source.emg_activation.on = Math.max(
+    source.emg_activation.off,
+    toFiniteNumber(source.emg_activation.on, 120)
+  );
+  source.emg_activation.debounce_ms = Math.max(
+    0,
+    Math.round(toFiniteNumber(source.emg_activation.debounce_ms, 200))
+  );
+
+  source.gsr_uS.low = Math.max(0, toFiniteNumber(source.gsr_uS.low, 1));
+  source.gsr_uS.high = Math.max(source.gsr_uS.low, toFiniteNumber(source.gsr_uS.high, 20));
+
+  source.body_temp.low = toFiniteNumber(source.body_temp.low, 36.1);
+  source.body_temp.high = Math.max(
+    source.body_temp.low,
+    toFiniteNumber(source.body_temp.high, 37.2)
+  );
+  source.body_temp.fever = Math.max(
+    source.body_temp.high,
+    toFiniteNumber(source.body_temp.fever, 38.0)
+  );
+
+  source.env_temp.low = toFiniteNumber(source.env_temp.low, 20);
+  source.env_temp.high = Math.max(source.env_temp.low, toFiniteNumber(source.env_temp.high, 35));
+
+  source.humidity.low = Math.max(0, toFiniteNumber(source.humidity.low, 30));
+  source.humidity.high = Math.max(
+    source.humidity.low,
+    toFiniteNumber(source.humidity.high, 70)
+  );
+
+  source.hr.low = Math.max(0, toFiniteNumber(source.hr.low, 60));
+  source.hr.high = Math.max(source.hr.low, toFiniteNumber(source.hr.high, 100));
+
+  source.spo2.low = Math.max(0, toFiniteNumber(source.spo2.low, 90));
+  source.spo2.normal = Math.max(source.spo2.low, toFiniteNumber(source.spo2.normal, 95));
+
+  return source;
+}
+
+function buildThresholdState(source = {}) {
+  const merged = createDefaultThresholds();
+  for (const sectionKey of Object.keys(merged)) {
+    const section = merged[sectionKey];
+    for (const fieldKey of Object.keys(section)) {
+      if (source?.[sectionKey]?.[fieldKey] !== undefined) {
+        section[fieldKey] = source[sectionKey][fieldKey];
+      }
+    }
+  }
+  return normalizeThresholds(merged);
+}
+
+function assignThresholds(target, source) {
+  for (const sectionKey of Object.keys(target)) {
+    for (const fieldKey of Object.keys(target[sectionKey])) {
+      target[sectionKey][fieldKey] = source[sectionKey][fieldKey];
+    }
+  }
+}
+
+function formatThresholdLabel(value) {
+  const num = Number(value);
+  return Number.isInteger(num) ? String(num) : num.toFixed(1).replace(/\.0$/, "");
+}
+
+function buildGsrStripLines() {
+  return [
+    {
+      startValue: thresholdSettings.gsr_uS.low,
+      endValue: thresholdSettings.gsr_uS.high,
+      color: "rgba(0, 255, 0, 0.1)",
+      label: `正常導電度 ${formatThresholdLabel(thresholdSettings.gsr_uS.low)}–${formatThresholdLabel(thresholdSettings.gsr_uS.high)} µS`,
+      labelFontColor: "green",
+    },
+  ];
+}
+
+function buildEcgStripLines() {
+  return [
+    {
+      startValue: thresholdSettings.ecg_quality.rms_low,
+      endValue: thresholdSettings.ecg_quality.rms_high,
+      color: "rgba(255, 99, 132, 0.10)",
+      label: `ECG 參考區間 ${formatThresholdLabel(thresholdSettings.ecg_quality.rms_low)}–${formatThresholdLabel(thresholdSettings.ecg_quality.rms_high)}`,
+      labelFontColor: "#c0392b",
+    },
+  ];
+}
+
+function buildEmgStripLines() {
+  return [
+    {
+      startValue: thresholdSettings.emg_env.low,
+      endValue: thresholdSettings.emg_env.high,
+      color: "rgba(46, 204, 113, 0.12)",
+      label: `EMG 參考區間 ${formatThresholdLabel(thresholdSettings.emg_env.low)}–${formatThresholdLabel(thresholdSettings.emg_env.high)}`,
+      labelFontColor: "#1e8449",
+    },
+  ];
+}
+
+function buildBodyTempStripLines() {
+  return [
+    {
+      startValue: thresholdSettings.body_temp.low,
+      endValue: thresholdSettings.body_temp.high,
+      color: "rgba(0, 255, 0, 0.15)",
+      label: `正常體溫 ${formatThresholdLabel(thresholdSettings.body_temp.low)}–${formatThresholdLabel(thresholdSettings.body_temp.high)}°C`,
+      labelFontColor: "green",
+    },
+    {
+      value: thresholdSettings.body_temp.fever,
+      color: "rgba(255, 0, 0, 0.2)",
+      lineDashType: "dash",
+      label: `發燒警戒線 ${formatThresholdLabel(thresholdSettings.body_temp.fever)}°C`,
+      labelFontColor: "red",
+    },
+  ];
+}
+
+function buildHrStripLines() {
+  return [
+    {
+      startValue: thresholdSettings.hr.low,
+      endValue: thresholdSettings.hr.high,
+      color: "rgba(0, 255, 0, 0.2)",
+      label: `正常 HR ${formatThresholdLabel(thresholdSettings.hr.low)}–${formatThresholdLabel(thresholdSettings.hr.high)}`,
+      labelFontColor: "green",
+    },
+  ];
+}
+
+function buildSpo2StripLines() {
+  return [
+    {
+      value: thresholdSettings.spo2.normal,
+      color: "rgba(255, 170, 51, 0.2)",
+      lineDashType: "dash",
+      label: `SpO2 正常 ≥${formatThresholdLabel(thresholdSettings.spo2.normal)}%`,
+    },
+    {
+      value: thresholdSettings.spo2.low,
+      color: "rgba(255, 0, 0, 0.2)",
+      lineDashType: "dash",
+      label: `SpO2 輕度缺氧 ${formatThresholdLabel(thresholdSettings.spo2.low)}%`,
+    },
+  ];
+}
+
+function setThresholdSaveMessage(message) {
+  thresholdSaveMessage.value = message;
+  if (thresholdSaveMessageTimer) {
+    clearTimeout(thresholdSaveMessageTimer);
+  }
+  thresholdSaveMessageTimer = setTimeout(() => {
+    thresholdSaveMessage.value = "";
+  }, 2500);
+}
+
+function refreshThresholdVisuals() {
+  for (const path in charts) {
+    const sensorCharts = charts[path];
+    if (sensorCharts.ecg_group?.options?.axisY) {
+      sensorCharts.ecg_group.options.axisY.stripLines = buildEcgStripLines();
+    }
+    if (sensorCharts.emg_group?.options?.axisY) {
+      sensorCharts.emg_group.options.axisY.stripLines = buildEmgStripLines();
+    }
+    if (sensorCharts.gsr_group?.options?.axisY) {
+      sensorCharts.gsr_group.options.axisY.stripLines = buildGsrStripLines();
+    }
+
+    for (const key in sensorCharts) {
+      sensorCharts[key]?.instance?.render?.();
+    }
+  }
+}
+
+function applyThresholdSettings({ persist = true, message = "" } = {}) {
+  const normalized = buildThresholdState(thresholdSettings);
+  assignThresholds(thresholdSettings, normalized);
+  if (persist) {
+    localStorage.setItem(THRESHOLD_STORAGE_KEY, JSON.stringify(normalized));
+  }
+  refreshThresholdVisuals();
+  if (message) {
+    setThresholdSaveMessage(message);
+  }
+}
+
+function loadThresholdSettings() {
+  try {
+    const raw = localStorage.getItem(THRESHOLD_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    assignThresholds(thresholdSettings, buildThresholdState(parsed));
+  } catch {
+    assignThresholds(thresholdSettings, buildThresholdState());
+  }
+}
+
+function onThresholdFieldChange() {
+  applyThresholdSettings({ message: "門檻已更新" });
+}
+
+function saveThresholdSettings() {
+  applyThresholdSettings({ message: "門檻已儲存" });
+}
+
+function resetThresholdSettings() {
+  const defaults = buildThresholdState();
+  assignThresholds(thresholdSettings, defaults);
+  localStorage.setItem(THRESHOLD_STORAGE_KEY, JSON.stringify(defaults));
+  refreshThresholdVisuals();
+  setThresholdSaveMessage("已還原預設門檻");
+}
+
+function toggleThresholdSettings() {
+  showThresholdSettings.value = !showThresholdSettings.value;
+  nextTick(() => adjustChartHeights());
+}
+
+loadThresholdSettings();
 
 // —— 換算與狀態
 function convertGSRtoConductance(analogValue) {
@@ -209,34 +602,34 @@ function getStatus(value, key, extra = {}) {
   if (extra.hold) return "hold";
 
   if (key === "gsr_value") {
-    if (value < TH.gsr_uS.low) return "low";
-    if (value > TH.gsr_uS.high) return "high";
+    if (value < thresholdSettings.gsr_uS.low) return "low";
+    if (value > thresholdSettings.gsr_uS.high) return "high";
     return "normal";
   }
   if (key === "body_temperature") {
-    if (value >= TH.body_temp.fever) return "high";
-    if (value < TH.body_temp.low) return "low";
-    if (value <= TH.body_temp.high) return "normal";
+    if (value >= thresholdSettings.body_temp.fever) return "high";
+    if (value < thresholdSettings.body_temp.low) return "low";
+    if (value <= thresholdSettings.body_temp.high) return "normal";
     return "high";
   }
   if (key === "env_temperature") {
-    if (value < TH.env_temp.low) return "low";
-    if (value > TH.env_temp.high) return "high";
+    if (value < thresholdSettings.env_temp.low) return "low";
+    if (value > thresholdSettings.env_temp.high) return "high";
     return "normal";
   }
   if (key === "env_humidity") {
-    if (value < TH.humidity.low) return "low";
-    if (value > TH.humidity.high) return "high";
+    if (value < thresholdSettings.humidity.low) return "low";
+    if (value > thresholdSettings.humidity.high) return "high";
     return "normal";
   }
   if (key === "hr_value") {
-    if (value < TH.hr.low) return "low";
-    if (value > TH.hr.high) return "high";
+    if (value < thresholdSettings.hr.low) return "low";
+    if (value > thresholdSettings.hr.high) return "high";
     return "normal";
   }
   if (key === "spo2_value") {
-    if (value < TH.spo2.low) return "high";
-    if (value < TH.spo2.normal) return "low";
+    if (value < thresholdSettings.spo2.low) return "high";
+    if (value < thresholdSettings.spo2.normal) return "low";
     return "normal";
   }
   return "normal";
@@ -262,8 +655,8 @@ function updateEcgQuality(rt, raw){
   const clipRatio = b.length ? clipCnt / b.length : 0;
 
   let status = "normal";
-  if (rms < TH.ecg_quality.rms_low) status = "low";
-  if (rms > TH.ecg_quality.rms_high || clipRatio > TH.ecg_quality.clip_ratio_high) status = "high";
+  if (rms < thresholdSettings.ecg_quality.rms_low) status = "low";
+  if (rms > thresholdSettings.ecg_quality.rms_high || clipRatio > thresholdSettings.ecg_quality.clip_ratio_high) status = "high";
   rt.ecgQuality = { rms, clipRatio, status };
   return rt.ecgQuality;
 }
@@ -302,7 +695,12 @@ function initialChart(path) {
       visible: true,
       dataKeys: [{ key: "ecg_value", label: "ECG", color: "red" }],
       options: createChartOptions("ECG", "ADC (raw)", {
-        axisY: { labelFontSize, title: "ADC (raw)", titleFontSize: labelTitleFontSize },
+        axisY: {
+          labelFontSize,
+          title: "ADC (raw)",
+          titleFontSize: labelTitleFontSize,
+          stripLines: buildEcgStripLines(),
+        },
         data: [{ type: "line", name: "ECG", showInLegend: true, color: "red", dataPoints: [] }],
       }),
       instance: null,
@@ -321,7 +719,12 @@ function initialChart(path) {
       visible: true,
       dataKeys: [{ key: "muscle_value", label: "EMG", color: "green" }],
       options: createChartOptions("EMG", "ADC (raw)", {
-        axisY: { labelFontSize, title: "ADC (raw)", titleFontSize: labelTitleFontSize },
+        axisY: {
+          labelFontSize,
+          title: "ADC (raw)",
+          titleFontSize: labelTitleFontSize,
+          stripLines: buildEmgStripLines(),
+        },
         data: [{ type: "line", name: "EMG", showInLegend: true, color: "green", dataPoints: [] }],
       }),
       instance: null,
@@ -349,7 +752,7 @@ function initialChart(path) {
       options: createChartOptions("GSR 皮膚導電度", "µS", {
         axisY: {
           labelFontSize, title: "GSR (µS)", titleFontSize: labelTitleFontSize,
-          stripLines: [{ startValue: TH.gsr_uS.low, endValue: TH.gsr_uS.high, color: "rgba(0, 255, 0, 0.1)", label: "正常導電度範圍", labelFontColor: "green" }],
+          stripLines: buildGsrStripLines(),
         },
         data: [{ type: "line", name: "GSR (µS)", showInLegend: true, color: "blue", dataPoints: [] }],
       }),
@@ -367,10 +770,6 @@ function initialChart(path) {
       options: createChartOptions("體溫/濕度", "°C", {
         axisY: {
           labelFontSize, title: "°C", titleFontSize: labelTitleFontSize,
-          stripLines: [
-            { startValue: TH.body_temp.low, endValue: TH.body_temp.high, color: "rgba(0, 255, 0, 0.15)", label: `正常體溫 ${TH.body_temp.low}–${TH.body_temp.high}`, labelFontColor: "green" },
-            { value: TH.body_temp.fever, color: "rgba(255, 0, 0, 0.2)", lineDashType: "dash", label: `發燒警戒線 ${TH.body_temp.fever}°C`, labelFontColor: "red" },
-          ],
         },
         axisY2: { minimum: 0, maximum: 100, labelFontSize, title: "Humidity (%)", titleFontSize: labelTitleFontSize },
         data: [
@@ -393,17 +792,10 @@ function initialChart(path) {
         axisY: {
           minimum: 0, maximum: 180,
           labelFontSize, title: "Heart Rate (bpm)", titleFontSize: labelTitleFontSize,
-          stripLines: [
-            { startValue: TH.hr.low, endValue: TH.hr.high, color: "rgba(0, 255, 0, 0.2)", label: `正常 HR ${TH.hr.low}–${TH.hr.high}`, labelFontColor: "green" },
-          ],
         },
         axisY2: {
           minimum: 0, maximum: 100,
           labelFontSize, title: "SpO2 (%)", titleFontSize: labelTitleFontSize,
-          stripLines: [
-            { value: TH.spo2.normal, color: "rgba(255, 170, 51, 0.2)", lineDashType: "dash", label: `SpO2 正常 ≥${TH.spo2.normal}%` },
-            { value: TH.spo2.low, color: "rgba(255, 0, 0, 0.2)", lineDashType: "dash", label: `SpO2 輕度缺氧 ${TH.spo2.low}%` },
-          ],
         },
         data: [
           { type: "line", name: "Heart Rate", showInLegend: true, color: "red", dataPoints: [], axisYType: "primary" },
@@ -452,7 +844,8 @@ function visibleGroupsCount(sensorCharts) {
 }
 function adjustChartHeights() {
   const vh = window.innerHeight;
-  const headerReserve = 180;
+  const settingsPanelHeight = thresholdSettingsPanelRef.value?.offsetHeight || 0;
+  const headerReserve = 180 + settingsPanelHeight;
   const available = Math.max(240, vh - headerReserve);
 
   let computedOne = 280;
@@ -514,7 +907,7 @@ const updateCharts = async () => {
         for (const groupKey in sensorCharts) {
           const group = sensorCharts[groupKey];
           if (!group) continue;
-          group.statusList = [];
+          group.statusList.length = 0;
 
           group.dataKeys.forEach((entry, index) => {
             let rawValue = dataObj[entry.key];
@@ -577,20 +970,20 @@ const updateCharts = async () => {
                   const den = group.runtime.mvcMax - group.runtime.restBase;
                   group.runtime.level01 = Math.max(0, Math.min(1, num / den));
                 } else {
-                  const lo = TH.emg_env.low, hi = TH.emg_env.high;
+                  const lo = thresholdSettings.emg_env.low, hi = thresholdSettings.emg_env.high;
                   group.runtime.level01 = Math.max(0, Math.min(1, (envForState - lo) / Math.max(hi - lo, 1)));
                 }
 
                 // 一眼辨識：遲滯 + 去抖
                 const now = Date.now();
                 let nextActive = group.runtime.active;
-                const onTh  = TH.emg_activation.on;
-                const offTh = TH.emg_activation.off;
+                const onTh  = thresholdSettings.emg_activation.on;
+                const offTh = thresholdSettings.emg_activation.off;
                 if (!group.runtime.active && envForState >= onTh) nextActive = true;
                 if ( group.runtime.active && envForState <= offTh) nextActive = false;
 
                 if (nextActive !== group.runtime.active) {
-                  if (now - (group.runtime.activeChangedAt || 0) >= TH.emg_activation.debounce_ms) {
+                  if (now - (group.runtime.activeChangedAt || 0) >= thresholdSettings.emg_activation.debounce_ms) {
                     group.runtime.active = nextActive;
                     group.runtime.activeChangedAt = now;
                   }
@@ -635,8 +1028,8 @@ const updateCharts = async () => {
             // EMG 正常：用 ADC 包絡粗分等級（僅作燈號，不影響 ACTIVE 徽章）
             if (groupKey === "emg_group" && dataObj.muscle_ok !== false && group.runtime?.useEnvelope) {
               const envRaw = pushEnvelope(group.runtime, 'emgEnvBuf_status', Number(dataObj["muscle_value"])||0, group.runtime.emgEnvWin);
-              if (envRaw < TH.emg_env.low) status = "low";
-              else if (envRaw > TH.emg_env.high) status = "high";
+              if (envRaw < thresholdSettings.emg_env.low) status = "low";
+              else if (envRaw > thresholdSettings.emg_env.high) status = "high";
               else status = "normal";
             }
 
@@ -704,6 +1097,156 @@ const toggleRecording = () => {
 
 .home-button-container{
   display:flex; gap:10px; flex-wrap:wrap; margin:10px;
+}
+
+.threshold-settings-panel{
+  margin: 0 10px 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fbff;
+  border: 1px solid #d8e6f3;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+  color:#000;
+}
+
+.threshold-settings-header{
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  align-items:flex-start;
+  margin-bottom:12px;
+}
+
+.threshold-settings-header h3{
+  margin:0 0 6px;
+}
+
+.threshold-settings-header p{
+  margin:0;
+  color:#000;
+}
+
+.threshold-settings-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.save-settings-btn,
+.reset-settings-btn{
+  padding:8px 14px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+.save-settings-btn{
+  background:#1f78d1;
+  color:#fff;
+}
+
+.reset-settings-btn{
+  background:#e7eef5;
+  color:#2f3b46;
+}
+
+.threshold-save-message{
+  margin: 0 0 12px;
+  color:#000;
+  font-weight:600;
+}
+
+.threshold-settings-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap:12px;
+}
+
+.threshold-settings-card{
+  background:#fff;
+  border:1px solid #e4edf5;
+  border-radius:10px;
+  padding:12px;
+}
+
+.threshold-settings-card h4{
+  margin:0 0 10px;
+  color:#000;
+}
+
+.threshold-card-description{
+  margin:0 0 10px;
+  color:#000;
+  font-size:14px;
+  line-height:1.45;
+}
+
+.threshold-input{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-bottom:10px;
+  color:#000;
+}
+
+.threshold-input:last-child{
+  margin-bottom:0;
+}
+
+.threshold-input input{
+  padding:8px 10px;
+  border:1px solid #c9d6e2;
+  border-radius:8px;
+  color:#000;
+  background:#fff;
+}
+
+.status-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  align-items:center;
+  margin: 0 10px 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background:#f3f6f9;
+  border:1px solid #d3dce5;
+}
+
+.legend-item{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-weight:700;
+  color:#24313d;
+}
+
+.legend-dot{
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  display:inline-block;
+  border:2px solid transparent;
+}
+
+.legend-dot.normal{
+  background:#0b7a33;
+  border-color:#065c24;
+}
+
+.legend-dot.low{
+  background:#d39b00;
+  border-color:#9b6f00;
+}
+
+.legend-dot.high{
+  background:#c62828;
+  border-color:#8e1d1d;
+}
+
+.legend-dot.hold{
+  background:#697682;
+  border-color:#4c5660;
 }
 
 .scrollable-charts-container{
@@ -831,14 +1374,16 @@ const toggleRecording = () => {
 
 .status-indicator{
   font-weight:bold;
-  padding:6px 5px;
+  padding:6px 8px;
   border-radius:6px;
-  background-color:rgba(200,200,200,0.2);
+  background-color:#d7dde3;
+  border:1px solid transparent;
+  transition:background-color .15s ease, color .15s ease, border-color .15s ease;
 }
-.status-indicator.normal{ background-color:rgba(0,255,0,0.1); color:green; }
-.status-indicator.low{ background-color:rgba(255,255,0,0.2); color:goldenrod; }
-.status-indicator.high{ background-color:rgba(255,0,0,0.1); color:red; }
-.status-indicator.hold{ background-color:rgba(100,100,100,0.15); color:#666; }
+.status-indicator.normal{ background-color:#147a3f; color:#ffffff; border-color:#0d5c2f; }
+.status-indicator.low{ background-color:#d39b00; color:#2b1d00; border-color:#9b6f00; }
+.status-indicator.high{ background-color:#c62828; color:#ffffff; border-color:#8e1d1d; }
+.status-indicator.hold{ background-color:#697682; color:#ffffff; border-color:#4c5660; }
 
 .recording {
   background-color: red !important;
@@ -850,5 +1395,11 @@ const toggleRecording = () => {
   0% { opacity: 1; }
   50% { opacity: 0.5; }
   100% { opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  .threshold-settings-header{
+    flex-direction:column;
+  }
 }
 </style>

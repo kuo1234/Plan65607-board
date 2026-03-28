@@ -45,11 +45,13 @@
     "electron-log": "^5.1.7",
     "mongoose": "^9.0.2",
     "serialport": "^12.0.0",
-    "sqlite3": "^5.1.7",
     "vue-chartjs": "^5.3.1",
     "vue-router": "^4.2.5",
     "vue-youtube-embed": "^2.2.2",
     "vue3-toastify": "^0.2.1",
     "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "sqlite3": "^6.0.1"
   }
 }

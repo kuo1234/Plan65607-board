@@ -163,6 +163,42 @@ const sensorLoading = ref(false);
 const sensorSearched = ref(false);
 const sensorDataPoints = ref([]);
 
+const EXAM_DEFAULT_TIMEZONE = '+08:00';
+
+const normalizeExamTimeString = (value) => {
+  if (typeof value !== 'string') return '';
+
+  let text = value.trim();
+  if (!text) return '';
+
+  text = text.replace(
+    /\.(\d{3})\d+([zZ]|[+-]\d{2}:\d{2})$/,
+    '.$1$2'
+  );
+  text = text.replace(
+    /\.(\d{3})\d+$/,
+    '.$1'
+  );
+
+  const hasTimezone = /([zZ]|[+-]\d{2}:\d{2})$/.test(text);
+  if (!hasTimezone && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(text)) {
+    return `${text}${EXAM_DEFAULT_TIMEZONE}`;
+  }
+
+  return text;
+};
+
+const parseExamDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const normalized = normalizeExamTimeString(value);
+  if (!normalized) return null;
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 // --- 解析作答生理狀態為題目列表 ---
 const parsedExamData = computed(() => {
   if (!studentData.value || !studentData.value['作答生理狀態']) return {};
@@ -177,8 +213,10 @@ const parsedExamData = computed(() => {
     for (const key of keys) {
       const val = entries[key];
       if (val !== -1 && typeof val === 'string') {
-        // 考試時間字串本身就是 UTC+8（本地時間），直接保留
-        validEntries.push({ index: Number(key), time: val });
+        const normalizedTime = normalizeExamTimeString(val);
+        if (normalizedTime) {
+          validEntries.push({ index: Number(key), time: normalizedTime });
+        }
       }
     }
 
@@ -283,10 +321,16 @@ const selectQuestion = async (subject, q) => {
 
   try {
     // 用學員編號作為 uid，從 plan65607 DB 撈取生理量測資料
-    // 考試時間字串是本地時間 (UTC+8)，JS 的 new Date() 會自動將其轉為 UTC
     const uid = studentData.value.student_number;
-    const startISO = new Date(q.startTime).toISOString();
-    const endISO = new Date(q.endTime).toISOString();
+    const startDate = parseExamDate(q.startTime);
+    const endDate = parseExamDate(q.endTime);
+
+    if (!startDate || !endDate) {
+      throw new Error('題目時間格式無法解析');
+    }
+
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
     console.log(`[ExamHistory] Querying sensor data: uid=${uid}, start=${startISO}, end=${endISO}`);
     const results = await window.electronAPI.getHistoryData({
       uid: uid,
@@ -324,13 +368,18 @@ const toUTC8 = (dateInput) => {
 
 const formatDateTime = (iso) => {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseExamDate(iso);
+  if (!d) return String(iso);
   const pad = (n) => n.toString().padStart(2, '0');
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
 const formatDuration = (start, end) => {
-  const ms = new Date(end) - new Date(start);
+  const startDate = parseExamDate(start);
+  const endDate = parseExamDate(end);
+  if (!startDate || !endDate) return '';
+
+  const ms = endDate - startDate;
   const totalSec = Math.floor(ms / 1000);
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
